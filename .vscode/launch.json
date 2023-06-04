@@ -9,8 +9,9 @@
       "stopAtEntry": false,
       "externalConsole": false,
       "cwd": "/home/twheeler/Documents/projects/toomed",
-      "program": "/home/twheeler/Documents/projects/toomed/build/Debug/outDebug",
+      "program": "${workspaceFolder}/TOOMED",
       "MIMode": "gdb",
+      "preLaunchTask": "build",
       "miDebuggerPath": "gdb",
       "setupCommands": [
         {
