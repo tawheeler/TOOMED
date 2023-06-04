@@ -1,7 +1,9 @@
 #include <SDL2/SDL.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -24,14 +26,60 @@
 
 using namespace std;
 
+typedef float f32;
+typedef double f64;
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+typedef size_t usize;
+
+// The information associated with one side of an edge between vertices in the map.
+// If this represents the directed edge A->B, then it describes the edge viewed on the right side of
+// A->B.
+struct SideInfo {
+    u16 flags;
+    u16 texture_id;
+    i16 x_offset;  // Texture x offset
+    i16 y_offset;  // Texture y offset
+    usize a_ind;   // The index of vertex A (the source vertex)
+    usize b_ind;   // The index of vertex B (the dest vertex)
+};
+
 // Represents our game map
 struct Map {
+    // The editable map vertices.
+    // This will exactly match the vertices in the DelaunayMesh.
+    // (We error if adding any vertex to the DelaunayMesh fails (due to coincidence, for example).)
+    std::vector<common::Vec2f> vertices;
+
+    // All of the map-related side information.
+    // If we have side information for an edge A -> B, then that edge must end up in the mesh.
+    // Edges without side information may exist in the mesh. Such edges are assumed transparent.
+    std::vector<SideInfo> side_infos;
+
+    // Map <a_ind, b_ind> to index in side_infos.
+    std::map<std::tuple<usize, usize>, usize> side_to_info;
+
     // The map geometry
     core::DelaunayMesh mesh =
         core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE);
 
-    // edge data (texture, is opaque, etc.)
     // face data (is solid, height, is door, etc.)
+
+    usize AddEdge(int a_ind, int b_ind) {
+        SideInfo side_info;
+        side_info.a_ind = a_ind;
+        side_info.b_ind = b_ind;
+        side_infos.emplace_back(side_info);
+        usize edge_index = side_infos.size();
+        side_to_info[std::make_pair(a_ind, b_ind)] = edge_index;
+        return edge_index;
+    }
 };
 
 int main() {
@@ -56,11 +104,30 @@ int main() {
 
     // Create our map
     Map map;
-    map.mesh.AddDelaunayVertex({0.0, 0.0});
-    map.mesh.AddDelaunayVertex({0.0, 50.0});
-    map.mesh.AddDelaunayVertex({50.0, 50.0});
-    map.mesh.AddDelaunayVertex({50.0, 0.0});
-    map.mesh.AddDelaunayVertex({100.0, 100.0});
+    map.vertices.emplace_back(50.0, 50.0);
+    map.vertices.emplace_back(100.0, 50.0);
+    map.vertices.emplace_back(100.0, 100.0);
+    map.vertices.emplace_back(50.0, 100.0);
+    map.AddEdge(0, 1);
+    map.AddEdge(1, 2);
+    map.AddEdge(2, 3);
+    map.AddEdge(3, 0);
+
+    // Construct the mesh
+    {
+        // Add all vertices
+        for (const auto& v : map.vertices) {
+            int new_vertex = map.mesh.AddDelaunayVertex(v);
+            ASSERT(new_vertex != core::kInvalidIndex, "Failed to add vertex into mesh\n");
+        }
+
+        // Constrain all edges
+        for (const auto& side_info : map.side_infos) {
+            ASSERT(map.mesh.ConstrainEdge(side_info.a_ind, side_info.b_ind),
+                   "Failed to constraint edge %d -> %d\n", (int)(side_info.a_ind),
+                   (int)(side_info.b_ind));
+        }
+    }
 
     bool continue_running = true;
     while (continue_running) {
@@ -72,9 +139,13 @@ int main() {
             }
         }
 
+        // Clear screen
+        SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+        SDL_RenderClear(renderer);
+
         // Render the texture to the screen.
         // SDL_UpdateTexture(texture, NULL, pixels, SCREEN_SIZE_X * 4);
-        SDL_RenderCopyEx(renderer, texture, NULL, NULL, 0.0, NULL, SDL_FLIP_VERTICAL);
+        // SDL_RenderCopyEx(renderer, texture, NULL, NULL, 0.0, NULL, SDL_FLIP_VERTICAL);
 
         {  // Render the mesh
             SDL_SetRenderDrawColor(renderer, 0xFF, 0x48, 0xCF, 0xFF);
@@ -89,13 +160,56 @@ int main() {
                     const common::Vec2f* a = qe->vertex;
                     const common::Vec2f* b = qe_sym->vertex;
                     if (a > b && !map.mesh.IsBoundaryVertex(b)) {  // Avoid rendering edges twice
-                        int ax = a->x;
-                        int ay = SCREEN_SIZE_Y - a->y;
-                        int bx = b->x;
-                        int by = SCREEN_SIZE_Y - b->y;
+                        int ax = (int)(a->x);
+                        int ay = SCREEN_SIZE_Y - (int)(a->y);
+                        int bx = (int)(b->x);
+                        int by = SCREEN_SIZE_Y - (int)(b->y);
                         SDL_RenderDrawLine(renderer, ax, ay, bx, by);
                     }
                 }
+            }
+        }
+
+        {  // Render all side_infos
+            SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
+
+            for (const auto& side_info : map.side_infos) {
+                common::Vec2f a = map.vertices[side_info.a_ind];
+                common::Vec2f b = map.vertices[side_info.b_ind];
+
+                int ax = (int)(a.x);
+                int ay = SCREEN_SIZE_Y - (int)(a.y);
+                int bx = (int)(b.x);
+                int by = SCREEN_SIZE_Y - (int)(b.y);
+                SDL_RenderDrawLine(renderer, ax, ay, bx, by);
+            }
+        }
+
+        {  // Render all vertices
+
+            SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
+
+            for (const auto& v : map.vertices) {
+                int x = (int)(v.x);
+                int y = SCREEN_SIZE_Y - (int)(v.y);
+
+                SDL_Rect rect;
+
+                // Outline with darker color
+                SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+                rect.x = (int)(x - 2);
+                rect.y = (int)(y - 2);
+                rect.h = 5;
+                rect.w = 5;
+                SDL_RenderFillRect(renderer, &rect);
+
+                // Fill with lighter color
+                SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
+                rect.x = (int)(x - 1);
+                rect.y = (int)(y - 1);
+                rect.h = 3;
+                rect.w = 3;
+                SDL_RenderFillRect(renderer, &rect);
             }
         }
 
