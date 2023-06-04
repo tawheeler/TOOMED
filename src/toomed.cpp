@@ -82,6 +82,11 @@ struct Map {
     }
 };
 
+common::Vec2f GlobalToCamera(common::Vec2f g, common::Vec2f camera_pos, f32 camera_zoom) {
+    common::Vec2f c = (g - camera_pos) * camera_zoom;
+    return common::Vec2f(SCREEN_SIZE_X / 2 + c.x, SCREEN_SIZE_Y / 2 - c.y);
+}
+
 int main() {
     // Initialize SDL
     ASSERT(SDL_Init(SDL_INIT_VIDEO) == 0, "SDL initialization failed: %s\n", SDL_GetError());
@@ -104,14 +109,18 @@ int main() {
 
     // Create our map
     Map map;
-    map.vertices.emplace_back(50.0, 50.0);
-    map.vertices.emplace_back(100.0, 50.0);
-    map.vertices.emplace_back(100.0, 100.0);
-    map.vertices.emplace_back(50.0, 100.0);
+    map.vertices.emplace_back(1.0, 1.0);
+    map.vertices.emplace_back(2.0, 1.0);
+    map.vertices.emplace_back(2.0, 2.0);
+    map.vertices.emplace_back(1.0, 2.0);
     map.AddEdge(0, 1);
     map.AddEdge(1, 2);
     map.AddEdge(2, 3);
     map.AddEdge(3, 0);
+
+    // Camera parameters
+    common::Vec2f camera_pos = {2.0, 2.0};
+    f32 camera_zoom = 50.0;
 
     // Construct the mesh
     {
@@ -160,11 +169,10 @@ int main() {
                     const common::Vec2f* a = qe->vertex;
                     const common::Vec2f* b = qe_sym->vertex;
                     if (a > b && !map.mesh.IsBoundaryVertex(b)) {  // Avoid rendering edges twice
-                        int ax = (int)(a->x);
-                        int ay = SCREEN_SIZE_Y - (int)(a->y);
-                        int bx = (int)(b->x);
-                        int by = SCREEN_SIZE_Y - (int)(b->y);
-                        SDL_RenderDrawLine(renderer, ax, ay, bx, by);
+                        auto a_cam = GlobalToCamera(*a, camera_pos, camera_zoom);
+                        auto b_cam = GlobalToCamera(*b, camera_pos, camera_zoom);
+                        SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
+                                           (int)(b_cam.y));
                     }
                 }
             }
@@ -177,11 +185,10 @@ int main() {
                 common::Vec2f a = map.vertices[side_info.a_ind];
                 common::Vec2f b = map.vertices[side_info.b_ind];
 
-                int ax = (int)(a.x);
-                int ay = SCREEN_SIZE_Y - (int)(a.y);
-                int bx = (int)(b.x);
-                int by = SCREEN_SIZE_Y - (int)(b.y);
-                SDL_RenderDrawLine(renderer, ax, ay, bx, by);
+                auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
+                auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
+                SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
+                                   (int)(b_cam.y));
             }
         }
 
@@ -190,23 +197,22 @@ int main() {
             SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
 
             for (const auto& v : map.vertices) {
-                int x = (int)(v.x);
-                int y = SCREEN_SIZE_Y - (int)(v.y);
+                auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
 
                 SDL_Rect rect;
 
                 // Outline with darker color
                 SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
-                rect.x = (int)(x - 2);
-                rect.y = (int)(y - 2);
+                rect.x = (int)(v_cam.x - 2);
+                rect.y = (int)(v_cam.y - 2);
                 rect.h = 5;
                 rect.w = 5;
                 SDL_RenderFillRect(renderer, &rect);
 
                 // Fill with lighter color
                 SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
-                rect.x = (int)(x - 1);
-                rect.y = (int)(y - 1);
+                rect.x = (int)(v_cam.x - 1);
+                rect.y = (int)(v_cam.y - 1);
                 rect.h = 3;
                 rect.w = 3;
                 SDL_RenderFillRect(renderer, &rect);
