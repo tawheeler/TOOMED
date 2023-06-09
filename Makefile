@@ -5,7 +5,8 @@
 # Compiler settings - Can be customized.
 CC = g++
 CXXFLAGS = -std=c++11 -Wall -g # Note: -g adds proper debugging with symbols
-LDFLAGS = -lSDL2
+# LDFLAGS = -lSDL2
+LDFLAGS = /usr/local/lib/libSDL2.a -ldl -lpthread
 
 # Makefile settings - Can be customized.
 APPNAME = TOOMED

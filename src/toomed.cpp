@@ -87,7 +87,16 @@ common::Vec2f GlobalToCamera(common::Vec2f g, common::Vec2f camera_pos, f32 came
     return common::Vec2f(SCREEN_SIZE_X / 2 + c.x, SCREEN_SIZE_Y / 2 - c.y);
 }
 
+common::Vec2f CameraToGlobal(common::Vec2f c, common::Vec2f camera_pos, f32 camera_zoom) {
+    common::Vec2f g_offset = common::Vec2f(c.x - SCREEN_SIZE_X / 2, SCREEN_SIZE_Y / 2 - c.y);
+    return g_offset / camera_zoom + camera_pos;
+}
+
 int main() {
+    SDL_version ver;
+    SDL_GetVersion(&ver);
+    fprintf(stdout, "Running with SDL2 version %d.%d.%d\n", ver.major, ver.minor, ver.patch);
+
     // Initialize SDL
     ASSERT(SDL_Init(SDL_INIT_VIDEO) == 0, "SDL initialization failed: %s\n", SDL_GetError());
 
@@ -110,17 +119,32 @@ int main() {
     // Create our map
     Map map;
     map.vertices.emplace_back(1.0, 1.0);
-    map.vertices.emplace_back(2.0, 1.0);
-    map.vertices.emplace_back(2.0, 2.0);
-    map.vertices.emplace_back(1.0, 2.0);
-    map.AddEdge(0, 1);
-    map.AddEdge(1, 2);
-    map.AddEdge(2, 3);
-    map.AddEdge(3, 0);
+    map.vertices.emplace_back(7.0, 1.0);
+    map.vertices.emplace_back(7.0, 3.0);
+    map.vertices.emplace_back(6.0, 3.0);
+    map.vertices.emplace_back(9.0, 3.0);
+    map.vertices.emplace_back(9.0, 1.0);
+    map.vertices.emplace_back(12.0, 1.0);
+    map.vertices.emplace_back(12.0, 7.0);
+    map.vertices.emplace_back(9.0, 6.0);
+    map.vertices.emplace_back(9.0, 5.0);
+    map.vertices.emplace_back(6.0, 5.0);
+    map.vertices.emplace_back(6.0, 6.0);
+    map.vertices.emplace_back(7.0, 6.0);
+    map.vertices.emplace_back(7.0, 7.0);
+    map.vertices.emplace_back(1.0, 7.0);
+    // for (int i = 0; i < 14; i++) {
+    //     map.AddEdge(i, (i + 1) % 15);
+    // }
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
     f32 camera_zoom = 50.0;
+
+    // Mouse press params
+    bool mouse_is_pressed = false;
+    common::Vec2f mouse_click_pos = {0.0, 0.0};
+    common::Vec2f camera_pos_at_mouse_click = {0.0, 0.0};
 
     // Construct the mesh
     {
@@ -145,6 +169,38 @@ int main() {
             if (event.type == SDL_QUIT) {
                 continue_running = false;
                 break;
+            } else if (event.type == SDL_WINDOWEVENT &&
+                       event.window.event == SDL_WINDOWEVENT_CLOSE &&
+                       event.window.windowID == SDL_GetWindowID(window)) {
+                continue_running = false;
+                break;
+            } else if (event.type == SDL_MOUSEWHEEL) {
+                if (event.wheel.preciseY > 0) {
+                    camera_zoom *= 1.1;
+                } else {
+                    camera_zoom /= 1.1;
+                }
+            } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+                if (!mouse_is_pressed) {
+                    // New press
+                    mouse_is_pressed = true;
+                    mouse_click_pos = CameraToGlobal(common::Vec2f(event.button.x, event.button.y),
+                                                     camera_pos, camera_zoom);
+                    camera_pos_at_mouse_click = camera_pos;
+                }
+            } else if (event.type == SDL_MOUSEBUTTONUP) {
+                if (mouse_is_pressed) {
+                    // New release
+                    mouse_is_pressed = false;
+                }
+            } else if (event.type == SDL_MOUSEMOTION) {
+                if (mouse_is_pressed) {
+                    // Move the camera
+                    common::Vec2f mouse_pos =
+                        CameraToGlobal(common::Vec2f(event.motion.x, event.motion.y),
+                                       camera_pos_at_mouse_click, camera_zoom);
+                    camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
+                }
             }
         }
 
@@ -219,7 +275,20 @@ int main() {
             }
         }
 
-        // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor refresh rate. (30Hz)
+        // if (mouse_is_pressed) {  // Render the mouse pressed location.
+        //     SDL_Rect rect;
+        //     SDL_SetRenderDrawColor(renderer, 0xFF, 0x41, 0x41, 0xFF);
+
+        //     auto v_click = GlobalToCamera(mouse_click_pos, camera_pos, camera_zoom);
+        //     rect.x = (int)(v_click.x - 4);
+        //     rect.y = (int)(v_click.y - 4);
+        //     rect.h = 9;
+        //     rect.w = 9;
+        //     SDL_RenderFillRect(renderer, &rect);
+        // }
+
+        // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor refresh rate.
+        // (30Hz)
         SDL_RenderPresent(renderer);
     }
 
