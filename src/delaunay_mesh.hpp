@@ -7,6 +7,11 @@ namespace core {
 
 constexpr int kInvalidIndex = -1;
 
+struct VertexData {
+    size_t index;
+    common::Vec2f vertex;
+};
+
 // A quarter edge represents a directed edge in a QuadEdgeTree.
 // Each undirected edge in the graph A <-> B with face L on the left of A->B and face R on the right
 // of A->B has four quarter edges:
@@ -14,11 +19,11 @@ constexpr int kInvalidIndex = -1;
 // If this quarter edge is primal, then the vertex index points to its vertex.
 // If this quarter edge is dual (i.e., represents a face), then ivertex is set to typemax(size_t).
 struct QuarterEdge {
-    int index;
-    common::Vec2f* vertex;  // Non-null if this is a quarter edge originating at a vertex
-    QuarterEdge* next;      // The next right-hand (CCW) QuarterEdge with the same origin
-    QuarterEdge* rot;       // The next right-hand (CCW) QuarterEdge associated with the same
-                            // undirected original edge.
+    size_t index;
+    VertexData* vertex;  // Non-null if this is a quarter edge originating at a vertex
+    QuarterEdge* next;   // The next right-hand (CCW) QuarterEdge with the same origin
+    QuarterEdge* rot;    // The next right-hand (CCW) QuarterEdge associated with the same
+                         // undirected original edge.
 };
 
 // A dual edge connects two faces.
@@ -47,7 +52,7 @@ class DelaunayMesh {
     size_t NumQuarterEdges() const { return quarter_edges_.size(); }
     size_t NumEdges() const { return NumQuarterEdges() / 4; }
 
-    const common::Vec2f& GetVertex(int i) const { return *(vertices_.at(i)); }
+    const common::Vec2f& GetVertex(int i) const { return vertices_.at(i)->vertex; }
     QuarterEdge* GetQuarterEdge(int i) const { return quarter_edges_.at(i); }
 
     // Get the quarter edge pointing from i to j, if it exists.
@@ -93,6 +98,12 @@ class DelaunayMesh {
     QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p, QuarterEdge* qe_ab);
     QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p);
 
+    // Given a dual quarter edge, return the quarter edge originating at the given vertex on that
+    // face, pointed in a right-hand orientation.
+    QuarterEdge* GetTriangleQuarterEdge1(const QuarterEdge* qe_dual);
+    QuarterEdge* GetTriangleQuarterEdge2(const QuarterEdge* qe_dual);
+    QuarterEdge* GetTriangleQuarterEdge3(const QuarterEdge* qe_dual);
+
     // Given a dual quarter edge, return the first vertex on that face.
     const common::Vec2f& GetTriangleVertex1(const QuarterEdge* qe_dual);
     const common::Vec2f& GetTriangleVertex2(const QuarterEdge* qe_dual);
@@ -101,16 +112,18 @@ class DelaunayMesh {
     // Whether the given vertex is one of the boundary vertices.
     // (The first three in vertices_)
     bool IsBoundaryVertex(const common::Vec2f* v);
+    bool IsBoundaryVertex(const VertexData& vertex_data);
+    bool IsBoundaryVertex(const VertexData* const& vertex_data);
 
   private:
     // Add a new vertex to the mesh, returning the index of the newly added vertex.
-    common::Vec2f* AddVertex(float x, float y);
+    VertexData* AddVertex(float x, float y);
 
     // Add a new edge between the vertices at index a and b.
     // Create the quarter edges associated with the given undirected edge.
     // We always create quarter-edges in groups of four.
     // Returns a reference to the quarter-edge from A to B.
-    QuarterEdge* AddEdge(common::Vec2f* a, common::Vec2f* b);
+    QuarterEdge* AddEdge(VertexData* a, VertexData* b);
 
     // A utility function used to join quarter edges
     void Splice(QuarterEdge* a, QuarterEdge* b);
@@ -130,7 +143,7 @@ class DelaunayMesh {
 
     // All of the stored vertices.
     // This class owns this memory.
-    std::vector<common::Vec2f*> vertices_ = {};
+    std::vector<VertexData*> vertices_ = {};
 
     // All of the stored quarter edges.
     // This class structure owns this memory.

@@ -28,11 +28,9 @@ DelaunayMesh::DelaunayMesh(float bounding_radius_, float min_dist_to_vertex,
     // The triangle radius is 2r + eps(), which guarantees that it is large enough.
     float r = 2 * bounding_radius_ + min_dist_to_edge + min_dist_to_vertex;
 
-    common::Vec2f* a = AddVertex(r * std::cos(90 * M_PI / 180.0), r * std::sin(90 * M_PI / 180.0));
-    common::Vec2f* b =
-        AddVertex(r * std::cos(210 * M_PI / 180.0), r * std::sin(210 * M_PI / 180.0));
-    common::Vec2f* c =
-        AddVertex(r * std::cos(-30 * M_PI / 180.0), r * std::sin(-30 * M_PI / 180.0));
+    VertexData* a = AddVertex(r * std::cos(90 * M_PI / 180.0), r * std::sin(90 * M_PI / 180.0));
+    VertexData* b = AddVertex(r * std::cos(210 * M_PI / 180.0), r * std::sin(210 * M_PI / 180.0));
+    VertexData* c = AddVertex(r * std::cos(-30 * M_PI / 180.0), r * std::sin(-30 * M_PI / 180.0));
 
     QuarterEdge* ab = AddEdge(a, b);
     QuarterEdge* bc = AddEdge(b, c);
@@ -73,19 +71,28 @@ QuarterEdge* DelaunayMesh::Lnext(const QuarterEdge* qe) { return Tor(qe)->next->
 
 // ------------------------------------------------------------------------------------------------
 bool DelaunayMesh::IsBoundaryVertex(const common::Vec2f* v) {
-    return v == vertices_[0] || v == vertices_[1] || v == vertices_[2];
+    return v == &(vertices_[0]->vertex) || v == &(vertices_[1]->vertex) ||
+           v == &(vertices_[2]->vertex);
 }
 
 // ------------------------------------------------------------------------------------------------
-common::Vec2f* DelaunayMesh::AddVertex(float x, float y) {
-    common::Vec2f* vertex = new common::Vec2f({.x = x, .y = y});
-    vertices_.push_back(vertex);
-    return vertex;
+bool DelaunayMesh::IsBoundaryVertex(const VertexData& vertex_data) {
+    return vertex_data.index <= 2;
+}
+bool DelaunayMesh::IsBoundaryVertex(const VertexData* const& vertex_data) {
+    return vertex_data->index <= 2;
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::AddEdge(common::Vec2f* a, common::Vec2f* b) {
-    int base_index = quarter_edges_.size();
+VertexData* DelaunayMesh::AddVertex(float x, float y) {
+    VertexData* vertex_data = new VertexData({vertices_.size(), common::Vec2f(x, y)});
+    vertices_.push_back(vertex_data);
+    return vertex_data;
+}
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdge* DelaunayMesh::AddEdge(VertexData* a, VertexData* b) {
+    size_t base_index = quarter_edges_.size();
     QuarterEdge* ab = new QuarterEdge({base_index, a, nullptr, nullptr});
     QuarterEdge* lr = new QuarterEdge({base_index + 1, nullptr, nullptr, nullptr});
     QuarterEdge* ba = new QuarterEdge({base_index + 2, b, nullptr, nullptr});
@@ -123,9 +130,9 @@ QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p, QuarterE
         QuarterEdge* qe_bc = qe_dual->next->rot;
         QuarterEdge* qe_ca = qe_dual->next->next->rot;
 
-        const auto& a = *(qe_ab->vertex);
-        const auto& b = *(qe_bc->vertex);
-        const auto& c = *(qe_ca->vertex);
+        const auto& a = (qe_ab->vertex)->vertex;
+        const auto& b = (qe_bc->vertex)->vertex;
+        const auto& c = (qe_ca->vertex)->vertex;
 
         if (common::GetRightHandedness(a, b, p) < 0) {
             qe_dual = Rot(qe_ab);  // Move across AB
@@ -146,18 +153,33 @@ QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p) {
 }
 
 // ------------------------------------------------------------------------------------------------
+QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge1(const QuarterEdge* qe_dual) {
+    return qe_dual->rot;
+}
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge2(const QuarterEdge* qe_dual) {
+    return qe_dual->next->rot;
+}
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge3(const QuarterEdge* qe_dual) {
+    return qe_dual->next->next->rot;
+}
+
+// ------------------------------------------------------------------------------------------------
 const common::Vec2f& DelaunayMesh::GetTriangleVertex1(const QuarterEdge* qe_dual) {
-    return *((qe_dual->rot)->vertex);
+    return GetTriangleQuarterEdge1(qe_dual)->vertex->vertex;
 }
 
 // ------------------------------------------------------------------------------------------------
 const common::Vec2f& DelaunayMesh::GetTriangleVertex2(const QuarterEdge* qe_dual) {
-    return *((qe_dual->next->rot)->vertex);
+    return GetTriangleQuarterEdge2(qe_dual)->vertex->vertex;
 }
 
 // ------------------------------------------------------------------------------------------------
 const common::Vec2f& DelaunayMesh::GetTriangleVertex3(const QuarterEdge* qe_dual) {
-    return *((qe_dual->next->next->rot)->vertex);
+    return GetTriangleQuarterEdge3(qe_dual)->vertex->vertex;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -189,9 +211,9 @@ int DelaunayMesh::AddDelaunayVertex(const common::Vec2f& p) {
     QuarterEdge* qe_ca = qe_dual->next->next->rot;
 
     // Grab the vertices
-    const common::Vec2f& a = *(qe_ab->vertex);
-    const common::Vec2f& b = *(qe_bc->vertex);
-    const common::Vec2f& c = *(qe_ca->vertex);
+    const common::Vec2f& a = qe_ab->vertex->vertex;
+    const common::Vec2f& b = qe_bc->vertex->vertex;
+    const common::Vec2f& c = qe_ca->vertex->vertex;
 
     // If we are too close to an existing vertex, do nothing.
     if (std::min({common::Norm(a - p), common::Norm(b - p), common::Norm(c - p)}) <
@@ -216,7 +238,7 @@ int DelaunayMesh::AddDelaunayVertex(const common::Vec2f& p) {
     }
 
     // Add the vertex
-    common::Vec2f* p_ptr = AddVertex(p.x, p.y);
+    VertexData* p_ptr = AddVertex(p.x, p.y);
 
     // Check whether we are (effectively) on an edge.
     // If we are, we delete the existing edge and add four instead.
@@ -355,20 +377,20 @@ int DelaunayMesh::AddDelaunayVertex(const common::Vec2f& p) {
         done = qe == qe_start;
 
         // Only consider the edge if it is not a bounding edge
-        common::Vec2f* src_ptr = qe_outer_edge->vertex;
-        common::Vec2f* dst_ptr = Sym(qe_outer_edge)->vertex;
+        VertexData* src_ptr = qe_outer_edge->vertex;
+        VertexData* dst_ptr = Sym(qe_outer_edge)->vertex;
         int num_boundary_vertices = IsBoundaryVertex(src_ptr) + IsBoundaryVertex(dst_ptr);
         if (num_boundary_vertices == 2) {  // one edge being on the boundary is okay
             continue;
         }
 
         // Check the edge from qe_outer_edge to sym(qe_outer_edge)
-        const common::Vec2f& src = *src_ptr;
-        const common::Vec2f& dst = *dst_ptr;
+        const common::Vec2f& src = src_ptr->vertex;
+        const common::Vec2f& dst = dst_ptr->vertex;
 
         // Get the far vertex across the dividing edge
-        common::Vec2f* far_ptr = Sym(qe_outer_edge->next)->vertex;
-        const common::Vec2f& far = *far_ptr;
+        VertexData* far_ptr = Sym(qe_outer_edge->next)->vertex;
+        const common::Vec2f& far = far_ptr->vertex;
 
         // If the edge contains a boundary vertex, don't flip it if it would produce an inside-out
         // triangle.
@@ -414,8 +436,8 @@ QuarterEdge* DelaunayMesh::GetQuarterEdge(int i, int j) {
     }
 
     // If we already have an edge between these two vertices, we are done.
-    common::Vec2f* a = vertices_.at(i);
-    common::Vec2f* b = vertices_.at(j);
+    VertexData* a = vertices_.at(i);
+    VertexData* b = vertices_.at(j);
     for (QuarterEdge* qe : quarter_edges_) {
         if (qe->vertex == a) {
             if (Sym(qe)->vertex == b) {
@@ -439,8 +461,8 @@ bool DelaunayMesh::HasEdge(int i, int j) {
     }
 
     // If we already have an edge between these two vertices, we are done.
-    common::Vec2f* a = vertices_.at(i);
-    common::Vec2f* b = vertices_.at(j);
+    VertexData* a = vertices_.at(i);
+    VertexData* b = vertices_.at(j);
     for (QuarterEdge* qe : quarter_edges_) {
         if (qe->vertex == a) {
             if (Sym(qe)->vertex == b) {
@@ -470,20 +492,23 @@ bool DelaunayMesh::ConstrainEdge(int i, int j) {
     }
 
     // If we already have an edge between these two vertices, we are done.
-    common::Vec2f* a = vertices_.at(i);
-    common::Vec2f* b = vertices_.at(j);
+    VertexData* a_data = vertices_.at(i);
+    VertexData* b_data = vertices_.at(j);
     QuarterEdge* qe_a = nullptr;
     for (QuarterEdge* qe : quarter_edges_) {
-        if (qe->vertex == a) {
+        if (qe->vertex == a_data) {
             qe_a = qe;
-            if (Sym(qe)->vertex == b) {
+            if (Sym(qe)->vertex == b_data) {
                 return true;  // already exists
             }
         }
     }
 
-    std::cout << "A: (" << a->x << ", " << a->y << ")" << std::endl;
-    std::cout << "B: (" << b->x << ", " << b->y << ")" << std::endl;
+    const common::Vec2f& a = a_data->vertex;
+    const common::Vec2f& b = b_data->vertex;
+
+    std::cout << "A: (" << a.x << ", " << a.y << ")" << std::endl;
+    std::cout << "B: (" << b.x << ", " << b.y << ")" << std::endl;
 
     // --------------------------------------------------------------------------
     // The edge does not yet exist.
@@ -491,18 +516,13 @@ bool DelaunayMesh::ConstrainEdge(int i, int j) {
     // Repeat until we have flipped our way to producing AB.
 
     for (int iter = 0; iter < 100; iter++) {
-        std::cout << "Iter: " << iter << std::endl;
-
         // Rotate qe_a to the last coincident quarter edge that is CCW of the new segment.
-        while (GetRightHandedness(*a, *(Sym(qe_a)->vertex), *b) <= 0.0) {
+        while (GetRightHandedness(a, Sym(qe_a)->vertex->vertex, b) <= 0.0) {
             qe_a = qe_a->next;
         }
-        while (GetRightHandedness(*a, *(Sym(qe_a->next)->vertex), *b) > 0.0) {
+        while (GetRightHandedness(a, Sym(qe_a->next)->vertex->vertex, b) > 0.0) {
             qe_a = qe_a->next;
         }
-
-        std::cout << "Have qe_a (" << qe_a->vertex->x << ", " << qe_a->vertex->y << ") -> ("
-                  << Sym(qe_a)->vertex->x << ", " << Sym(qe_a)->vertex->y << ")" << std::endl;
 
         // qe_a will then have a CCW triangle ACD.
         // If the far side of the triangle is B (ACD == ADB), then we are done.
@@ -510,23 +530,21 @@ bool DelaunayMesh::ConstrainEdge(int i, int j) {
         // can flip CD.
         QuarterEdge* qe_dual =
             Tor(qe_a);  // The dual quarter edge that starts inside ACD and points across AC.
-        common::Vec2f* c = (qe_dual->next->rot)->vertex;
-        common::Vec2f* d = (qe_dual->next->next->rot)->vertex;
+        VertexData* c_data = (qe_dual->next->rot)->vertex;
+        VertexData* d_data = (qe_dual->next->next->rot)->vertex;
+        const common::Vec2f& c = c_data->vertex;
+        const common::Vec2f& d = d_data->vertex;
 
-        std::cout << "C: (" << c->x << ", " << c->y << ")" << std::endl;
-        std::cout << "D: (" << d->x << ", " << d->y << ")" << std::endl;
-
-        if (d == b) {
+        if (d_data == b_data) {
             // We have B, so we have produced edge ab and are done.
             return true;
         } else {
             // See if we can flip CD. We have to ensure that it is a convex quadrilateral.
             // E is the vertex on the far side.
-            common::Vec2f* e = Tor(Sym(qe_dual->next)->next)->vertex;
-            std::cout << "E: (" << e->x << ", " << e->y << ")" << std::endl;
-            if (GetRightHandedness(*a, *c, *e) > 0 && GetRightHandedness(*a, *e, *d) > 0) {
+            VertexData* e_data = Tor(Sym(qe_dual->next)->next)->vertex;
+            const common::Vec2f& e = e_data->vertex;
+            if (GetRightHandedness(a, c, e) > 0 && GetRightHandedness(a, e, d) > 0) {
                 // Flip it
-                std::cout << "Flip it!" << std::endl;
                 QuarterEdge* qe_cd = qe_dual->next->rot;
                 FlipEdge(qe_cd);
             } else {
