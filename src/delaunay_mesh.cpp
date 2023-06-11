@@ -52,34 +52,34 @@ DelaunayMesh::~DelaunayMesh() {
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::Next(const QuarterEdge* qe) { return qe->next; }
+QuarterEdge* DelaunayMesh::Next(const QuarterEdge* qe) const { return qe->next; }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::Rot(const QuarterEdge* qe) { return qe->rot; }
+QuarterEdge* DelaunayMesh::Rot(const QuarterEdge* qe) const { return qe->rot; }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::Sym(const QuarterEdge* qe) { return qe->rot->rot; }
+QuarterEdge* DelaunayMesh::Sym(const QuarterEdge* qe) const { return qe->rot->rot; }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::Tor(const QuarterEdge* qe) { return qe->rot->rot->rot; }
+QuarterEdge* DelaunayMesh::Tor(const QuarterEdge* qe) const { return qe->rot->rot->rot; }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::Prev(const QuarterEdge* qe) { return qe->rot->next->rot; }
+QuarterEdge* DelaunayMesh::Prev(const QuarterEdge* qe) const { return qe->rot->next->rot; }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::Lnext(const QuarterEdge* qe) { return Tor(qe)->next->rot; }
+QuarterEdge* DelaunayMesh::Lnext(const QuarterEdge* qe) const { return Tor(qe)->next->rot; }
 
 // ------------------------------------------------------------------------------------------------
-bool DelaunayMesh::IsBoundaryVertex(const common::Vec2f* v) {
+bool DelaunayMesh::IsBoundaryVertex(const common::Vec2f* v) const {
     return v == &(vertices_[0]->vertex) || v == &(vertices_[1]->vertex) ||
            v == &(vertices_[2]->vertex);
 }
 
 // ------------------------------------------------------------------------------------------------
-bool DelaunayMesh::IsBoundaryVertex(const VertexData& vertex_data) {
+bool DelaunayMesh::IsBoundaryVertex(const VertexData& vertex_data) const {
     return vertex_data.index <= 2;
 }
-bool DelaunayMesh::IsBoundaryVertex(const VertexData* const& vertex_data) {
+bool DelaunayMesh::IsBoundaryVertex(const VertexData* const& vertex_data) const {
     return vertex_data->index <= 2;
 }
 
@@ -122,7 +122,8 @@ void DelaunayMesh::Splice(QuarterEdge* a, QuarterEdge* b) {
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p, QuarterEdge* qe_dual) {
+QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p,
+                                                QuarterEdge* qe_dual) const {
     // This should always terminate
     constexpr int kMaxIters = 100;
     for (int iter = 0; iter < kMaxIters; iter++) {
@@ -148,37 +149,37 @@ QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p, QuarterE
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p) {
+QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p) const {
     return GetEnclosingTriangle(p, Tor(quarter_edges_.front()));
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge1(const QuarterEdge* qe_dual) {
+QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge1(const QuarterEdge* qe_dual) const {
     return qe_dual->rot;
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge2(const QuarterEdge* qe_dual) {
+QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge2(const QuarterEdge* qe_dual) const {
     return qe_dual->next->rot;
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge3(const QuarterEdge* qe_dual) {
+QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge3(const QuarterEdge* qe_dual) const {
     return qe_dual->next->next->rot;
 }
 
 // ------------------------------------------------------------------------------------------------
-const common::Vec2f& DelaunayMesh::GetTriangleVertex1(const QuarterEdge* qe_dual) {
+const common::Vec2f& DelaunayMesh::GetTriangleVertex1(const QuarterEdge* qe_dual) const {
     return GetTriangleQuarterEdge1(qe_dual)->vertex->vertex;
 }
 
 // ------------------------------------------------------------------------------------------------
-const common::Vec2f& DelaunayMesh::GetTriangleVertex2(const QuarterEdge* qe_dual) {
+const common::Vec2f& DelaunayMesh::GetTriangleVertex2(const QuarterEdge* qe_dual) const {
     return GetTriangleQuarterEdge2(qe_dual)->vertex->vertex;
 }
 
 // ------------------------------------------------------------------------------------------------
-const common::Vec2f& DelaunayMesh::GetTriangleVertex3(const QuarterEdge* qe_dual) {
+const common::Vec2f& DelaunayMesh::GetTriangleVertex3(const QuarterEdge* qe_dual) const {
     return GetTriangleQuarterEdge3(qe_dual)->vertex->vertex;
 }
 
@@ -425,7 +426,7 @@ int DelaunayMesh::AddDelaunayVertex(const common::Vec2f& p) {
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdge* DelaunayMesh::GetQuarterEdge(int i, int j) {
+QuarterEdge* DelaunayMesh::GetQuarterEdge(int i, int j) const {
     if (i == j) {
         return nullptr;  // Self edges do not exist
     }
@@ -450,7 +451,7 @@ QuarterEdge* DelaunayMesh::GetQuarterEdge(int i, int j) {
 }
 
 // ------------------------------------------------------------------------------------------------
-bool DelaunayMesh::HasEdge(int i, int j) {
+bool DelaunayMesh::HasEdge(int i, int j) const {
     if (i == j) {
         return false;  // Self edges do not exist
     }

@@ -57,11 +57,11 @@ class DelaunayMesh {
 
     // Get the quarter edge pointing from i to j, if it exists.
     // Note that the current implementation loops over all quarter edges.
-    QuarterEdge* GetQuarterEdge(int i, int j);
+    QuarterEdge* GetQuarterEdge(int i, int j) const;
 
     // Returns true if an edge from i to j exists.
     // Note that the current implementation loops over all quarter edges.
-    bool HasEdge(int i, int j);
+    bool HasEdge(int i, int j) const;
 
     // Insert a new vertex into our mesh, and update the mesh to continue to be a Delaunay
     // triangularization. Returns the index of the added vertex if a new point was added, and
@@ -74,46 +74,46 @@ class DelaunayMesh {
     bool ConstrainEdge(int i, int j);
 
     // Get the next right-hand (CCW) QuarterEdge with the same origin.
-    QuarterEdge* Next(const QuarterEdge* qe);
+    QuarterEdge* Next(const QuarterEdge* qe) const;
 
     // Get the next right-hand (CCW) QuarterEdge associated with the same undirected original edge.
-    QuarterEdge* Rot(const QuarterEdge* qe);
+    QuarterEdge* Rot(const QuarterEdge* qe) const;
 
     // Get the symmetric QuarterEdge - given QuarterEdge A->B, returns B->A.
-    QuarterEdge* Sym(const QuarterEdge* qe);
+    QuarterEdge* Sym(const QuarterEdge* qe) const;
 
     // Get the next left-hand (CW) QuarterEdge associated with the same undirected original edge.
     // This is rot, but the other way.
-    QuarterEdge* Tor(const QuarterEdge* qe);
+    QuarterEdge* Tor(const QuarterEdge* qe) const;
 
     // Get the previous right-hand (CCW) QuarterEdge with the same origin.
     // i.e. Get the next left-hand (CW) QuarterEdge with the same origin.
-    QuarterEdge* Prev(const QuarterEdge* qe);
+    QuarterEdge* Prev(const QuarterEdge* qe) const;
 
     // Get the next quarter edge that rotates around the same triangle (CCW), in the CCW direction.
-    QuarterEdge* Lnext(const QuarterEdge* qe);
+    QuarterEdge* Lnext(const QuarterEdge* qe) const;
 
     // Find the triangle in our mesh that encloses the given point.
     // Return a dual quarter edge originating from the triangle face.
-    QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p, QuarterEdge* qe_ab);
-    QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p);
+    QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p, QuarterEdge* qe_ab) const;
+    QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p) const;
 
     // Given a dual quarter edge, return the quarter edge originating at the given vertex on that
     // face, pointed in a right-hand orientation.
-    QuarterEdge* GetTriangleQuarterEdge1(const QuarterEdge* qe_dual);
-    QuarterEdge* GetTriangleQuarterEdge2(const QuarterEdge* qe_dual);
-    QuarterEdge* GetTriangleQuarterEdge3(const QuarterEdge* qe_dual);
+    QuarterEdge* GetTriangleQuarterEdge1(const QuarterEdge* qe_dual) const;
+    QuarterEdge* GetTriangleQuarterEdge2(const QuarterEdge* qe_dual) const;
+    QuarterEdge* GetTriangleQuarterEdge3(const QuarterEdge* qe_dual) const;
 
     // Given a dual quarter edge, return the first vertex on that face.
-    const common::Vec2f& GetTriangleVertex1(const QuarterEdge* qe_dual);
-    const common::Vec2f& GetTriangleVertex2(const QuarterEdge* qe_dual);
-    const common::Vec2f& GetTriangleVertex3(const QuarterEdge* qe_dual);
+    const common::Vec2f& GetTriangleVertex1(const QuarterEdge* qe_dual) const;
+    const common::Vec2f& GetTriangleVertex2(const QuarterEdge* qe_dual) const;
+    const common::Vec2f& GetTriangleVertex3(const QuarterEdge* qe_dual) const;
 
     // Whether the given vertex is one of the boundary vertices.
     // (The first three in vertices_)
-    bool IsBoundaryVertex(const common::Vec2f* v);
-    bool IsBoundaryVertex(const VertexData& vertex_data);
-    bool IsBoundaryVertex(const VertexData* const& vertex_data);
+    bool IsBoundaryVertex(const common::Vec2f* v) const;
+    bool IsBoundaryVertex(const VertexData& vertex_data) const;
+    bool IsBoundaryVertex(const VertexData* const& vertex_data) const;
 
   private:
     // Add a new vertex to the mesh, returning the index of the newly added vertex.

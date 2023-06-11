@@ -71,6 +71,11 @@ struct Map {
 
     // face data (is solid, height, is door, etc.)
 
+    bool HasEdge(int a_ind, int b_ind) {
+        auto tup = std::make_pair(a_ind, b_ind);
+        return side_to_info.find(tup) != side_to_info.end();
+    }
+
     usize AddEdge(int a_ind, int b_ind) {
         SideInfo side_info;
         side_info.a_ind = a_ind;
@@ -82,14 +87,49 @@ struct Map {
     }
 };
 
-common::Vec2f GlobalToCamera(common::Vec2f g, common::Vec2f camera_pos, f32 camera_zoom) {
+int MapVertexIndexToMeshVertexIndex(int ind) { return ind + 3; }
+int MeshVertexIndexToMapVertexIndex(int ind) { return ind - 3; }
+
+common::Vec2f GlobalToCamera(const common::Vec2f& g, const common::Vec2f& camera_pos,
+                             f32 camera_zoom) {
     common::Vec2f c = (g - camera_pos) * camera_zoom;
     return common::Vec2f(SCREEN_SIZE_X / 2 + c.x, SCREEN_SIZE_Y / 2 - c.y);
 }
 
-common::Vec2f CameraToGlobal(common::Vec2f c, common::Vec2f camera_pos, f32 camera_zoom) {
+common::Vec2f CameraToGlobal(const common::Vec2f& c, const common::Vec2f& camera_pos,
+                             f32 camera_zoom) {
     common::Vec2f g_offset = common::Vec2f(c.x - SCREEN_SIZE_X / 2, SCREEN_SIZE_Y / 2 - c.y);
     return g_offset / camera_zoom + camera_pos;
+}
+
+int FindFaceVertexNearPosition(const common::Vec2f& pos, core::QuarterEdge* qe_face,
+                               const core::DelaunayMesh& mesh, f32 tolerance = 0.5) {
+    core::QuarterEdge* qe_a = mesh.GetTriangleQuarterEdge1(qe_face);
+    core::QuarterEdge* qe_b = mesh.GetTriangleQuarterEdge2(qe_face);
+    core::QuarterEdge* qe_c = mesh.GetTriangleQuarterEdge3(qe_face);
+    const common::Vec2f& a = qe_a->vertex->vertex;
+    const common::Vec2f& b = qe_b->vertex->vertex;
+    const common::Vec2f& c = qe_c->vertex->vertex;
+
+    f32 dist_a = common::Norm(a - pos);
+    f32 dist_b = common::Norm(b - pos);
+    f32 dist_c = common::Norm(c - pos);
+
+    int selected_vertex_index = core::kInvalidIndex;
+    f32 min_distance = tolerance;
+    if (dist_a < min_distance) {
+        selected_vertex_index = qe_a->vertex->index;
+        min_distance = dist_a;
+    }
+    if (dist_b < min_distance) {
+        selected_vertex_index = qe_b->vertex->index;
+        min_distance = dist_b;
+    }
+    if (dist_c < min_distance) {
+        selected_vertex_index = qe_c->vertex->index;
+        // min_distance = dist_c;
+    }
+    return selected_vertex_index;
 }
 
 int main() {
@@ -122,6 +162,8 @@ int main() {
     map.vertices.emplace_back(7.0, 1.0);
     map.vertices.emplace_back(7.0, 3.0);
     map.vertices.emplace_back(6.0, 3.0);
+    map.vertices.emplace_back(6.0, 4.0);
+    map.vertices.emplace_back(9.0, 4.0);
     map.vertices.emplace_back(9.0, 3.0);
     map.vertices.emplace_back(9.0, 1.0);
     map.vertices.emplace_back(12.0, 1.0);
@@ -137,6 +179,16 @@ int main() {
     map.vertices.emplace_back(13.0, 0.0);
     map.vertices.emplace_back(13.0, 8.0);
     map.vertices.emplace_back(0.0, 8.0);
+
+    map.vertices.emplace_back(2.0, 2.0);
+    map.vertices.emplace_back(3.0, 2.0);
+    map.vertices.emplace_back(3.0, 3.0);
+    map.vertices.emplace_back(2.0, 3.0);
+
+    map.vertices.emplace_back(3.0, 5.0);
+    map.vertices.emplace_back(4.0, 5.0);
+    map.vertices.emplace_back(4.0, 6.0);
+    map.vertices.emplace_back(3.0, 6.0);
 
     // Construct the mesh
     {
@@ -192,37 +244,29 @@ int main() {
                                                      camera_pos, camera_zoom);
                     camera_pos_at_mouse_click = camera_pos;
 
-                    // Check for a selected vertex near the current mouse position.
-                    f32 min_dist = 999.0;
-                    core::QuarterEdge* qe_a = map.mesh.GetTriangleQuarterEdge1(qe_mouse_face);
-                    core::QuarterEdge* qe_b = map.mesh.GetTriangleQuarterEdge2(qe_mouse_face);
-                    core::QuarterEdge* qe_c = map.mesh.GetTriangleQuarterEdge3(qe_mouse_face);
-                    const common::Vec2f& a = qe_a->vertex->vertex;
-                    const common::Vec2f& b = qe_b->vertex->vertex;
-                    const common::Vec2f& c = qe_c->vertex->vertex;
-
-                    f32 dist_a = common::Norm(a - mouse_click_pos);
-                    f32 dist_b = common::Norm(b - mouse_click_pos);
-                    f32 dist_c = common::Norm(c - mouse_click_pos);
-
-                    selected_vertex_index = -1;
-                    if (dist_a < min_dist) {
-                        selected_vertex_index = qe_a->vertex->index;
-                        min_dist = dist_a;
-                    }
-                    if (dist_b < min_dist) {
-                        selected_vertex_index = qe_b->vertex->index;
-                        min_dist = dist_b;
-                    }
-                    if (dist_c < min_dist) {
-                        selected_vertex_index = qe_c->vertex->index;
-                        min_dist = dist_c;
-                    }
+                    // Check for a selected vertex near the current mouse position
+                    selected_vertex_index = FindFaceVertexNearPosition(
+                        mouse_click_pos, qe_mouse_face, map.mesh, /*tolerance =*/0.5);
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP) {
                 if (mouse_is_pressed) {
                     // New release
                     mouse_is_pressed = false;
+
+                    if (selected_vertex_index != core::kInvalidIndex) {
+                        // Check for a selected vertex near the released mouse position
+                        int released_vertex_index = FindFaceVertexNearPosition(
+                            mouse_pos, qe_mouse_face, map.mesh, /*tolerance =*/0.5);
+                        if (released_vertex_index != core::kInvalidIndex &&
+                            released_vertex_index != selected_vertex_index) {
+                            // Join those edges.
+                            int src = MeshVertexIndexToMapVertexIndex(selected_vertex_index);
+                            int dst = MeshVertexIndexToMapVertexIndex(released_vertex_index);
+                            if (!map.HasEdge(src, dst)) {
+                                map.AddEdge(src, dst);
+                            }
+                        }
+                    }
                 }
             } else if (event.type == SDL_MOUSEMOTION) {
                 // Move the mouse
@@ -230,8 +274,8 @@ int main() {
                                            camera_pos, camera_zoom);
                 qe_mouse_face = map.mesh.GetEnclosingTriangle(mouse_pos, qe_mouse_face);
 
-                if (mouse_is_pressed) {
-                    // Move the camera
+                // Pan the camera
+                if (mouse_is_pressed && selected_vertex_index == core::kInvalidIndex) {
                     camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
                 }
             }
@@ -296,7 +340,7 @@ int main() {
             }
         }
 
-        {  // Render all side_infos
+        {  // Render all side_infos (these are directed)
             SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
 
             for (const auto& side_info : map.side_infos) {
@@ -307,6 +351,13 @@ int main() {
                 auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
                 SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
                                    (int)(b_cam.y));
+
+                common::Vec2f c = (a + b) / 2.0;
+                common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
+                auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+                auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
+                SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
+                                   (int)(d_cam.y));
             }
         }
 
@@ -338,9 +389,8 @@ int main() {
         }
 
         if (selected_vertex_index != -1) {
-            // Render our selected vertex (Offset by 3 to skip the enclosing vertices).
-            const auto& v = map.vertices[selected_vertex_index - 3];
-
+            // Render our selected vertex
+            const auto& v = map.vertices[MeshVertexIndexToMapVertexIndex(selected_vertex_index)];
             auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
 
             SDL_Rect rect;
@@ -354,31 +404,23 @@ int main() {
             SDL_RenderFillRect(renderer, &rect);
 
             // Fill with lighter color
-            SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+            if (mouse_is_pressed) {
+                SDL_SetRenderDrawColor(renderer, 0xFF, 0xA0, 0xA0, 0xFF);
+            } else {
+                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+            }
             rect.x = (int)(v_cam.x - 2);
             rect.y = (int)(v_cam.y - 2);
             rect.h = 5;
             rect.w = 5;
             SDL_RenderFillRect(renderer, &rect);
 
-            // Render the mouse pos
-            v_cam = GlobalToCamera(mouse_click_pos, camera_pos, camera_zoom);
-
-            // Outline with darker color
-            SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
-            rect.x = (int)(v_cam.x - 3);
-            rect.y = (int)(v_cam.y - 3);
-            rect.h = 7;
-            rect.w = 7;
-            SDL_RenderFillRect(renderer, &rect);
-
-            // Fill with lighter color
-            SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-            rect.x = (int)(v_cam.x - 2);
-            rect.y = (int)(v_cam.y - 2);
-            rect.h = 5;
-            rect.w = 5;
-            SDL_RenderFillRect(renderer, &rect);
+            if (mouse_is_pressed) {
+                // Render a line to the mouse position.
+                auto b_cam = GlobalToCamera(mouse_pos, camera_pos, camera_zoom);
+                SDL_RenderDrawLine(renderer, (int)(v_cam.x), (int)(v_cam.y), (int)(b_cam.x),
+                                   (int)(b_cam.y));
+            }
         }
 
         // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor refresh rate.
