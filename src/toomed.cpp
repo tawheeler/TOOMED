@@ -7,9 +7,11 @@
 #include <string>
 #include <vector>
 
+#include "assets_exporter.hpp"
 #include "delaunay_mesh.hpp"
 #include "geometry_utils.hpp"
 #include "math_utils.hpp"
+#include "typedefs.hpp"
 
 #define SCREEN_SIZE_X 1280
 #define SCREEN_SIZE_Y 720
@@ -26,18 +28,6 @@
 
 using namespace std;
 
-typedef float f32;
-typedef double f64;
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-typedef size_t usize;
-
 // The information associated with one side of an edge between vertices in the map.
 // If this represents the directed edge A->B, then it describes the edge viewed on the right side of
 // A->B.
@@ -51,7 +41,7 @@ struct SideInfo {
 };
 
 // Represents our game map
-struct Map {
+struct GameMap {
     // The editable map vertices.
     // This will exactly match the vertices in the DelaunayMesh.
     // (We error if adding any vertex to the DelaunayMesh fails (due to coincidence, for example).)
@@ -132,6 +122,17 @@ int FindFaceVertexNearPosition(const common::Vec2f& pos, core::QuarterEdge* qe_f
     return selected_vertex_index;
 }
 
+void ExportGameData(const GameMap& map) {
+    std::cout << "--------------------------------------" << std::endl;
+    std::cout << "Exporting game data" << std::endl;
+
+    core::AssetsExporter exporter;
+    exporter.AddMeshEntry(map.mesh, "geometry_mesh");
+    std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
+
+    exporter.WriteToFile("../toom/assets/toomed.bin");
+}
+
 int main() {
     SDL_version ver;
     SDL_GetVersion(&ver);
@@ -157,7 +158,7 @@ int main() {
     ASSERT(texture, "Error creating SDL texture: %s\n", SDL_GetError());
 
     // Create our map
-    Map map;
+    GameMap map;
     map.vertices.emplace_back(1.0, 1.0);
     map.vertices.emplace_back(7.0, 1.0);
     map.vertices.emplace_back(7.0, 3.0);
@@ -190,20 +191,17 @@ int main() {
     map.vertices.emplace_back(4.0, 6.0);
     map.vertices.emplace_back(3.0, 6.0);
 
-    // Construct the mesh
-    {
-        // Add all vertices
-        for (const auto& v : map.vertices) {
-            int new_vertex = map.mesh.AddDelaunayVertex(v);
-            ASSERT(new_vertex != core::kInvalidIndex, "Failed to add vertex into mesh\n");
-        }
+    // Add all vertices
+    for (const auto& v : map.vertices) {
+        int new_vertex = map.mesh.AddDelaunayVertex(v);
+        ASSERT(new_vertex != core::kInvalidIndex, "Failed to add vertex into mesh\n");
+    }
 
-        // Constrain all edges
-        for (const auto& side_info : map.side_infos) {
-            ASSERT(map.mesh.ConstrainEdge(side_info.a_ind, side_info.b_ind),
-                   "Failed to constrain edge %d -> %d\n", (int)(side_info.a_ind),
-                   (int)(side_info.b_ind));
-        }
+    // Constrain all edges
+    for (const auto& side_info : map.side_infos) {
+        ASSERT(map.mesh.ConstrainEdge(side_info.a_ind, side_info.b_ind),
+               "Failed to constrain edge %d -> %d\n", (int)(side_info.a_ind),
+               (int)(side_info.b_ind));
     }
 
     // Camera parameters
@@ -259,11 +257,16 @@ int main() {
                             mouse_pos, qe_mouse_face, map.mesh, /*tolerance =*/0.5);
                         if (released_vertex_index != core::kInvalidIndex &&
                             released_vertex_index != selected_vertex_index) {
-                            // Join those edges.
+                            // Join those edges
                             int src = MeshVertexIndexToMapVertexIndex(selected_vertex_index);
                             int dst = MeshVertexIndexToMapVertexIndex(released_vertex_index);
                             if (!map.HasEdge(src, dst)) {
                                 map.AddEdge(src, dst);
+                            }
+
+                            // Recompute the mesh if necessary
+                            if (!map.mesh.HasEdge(selected_vertex_index, released_vertex_index)) {
+                                // map.ConstructMesh(); TODO
                             }
                         }
                     }
@@ -277,6 +280,10 @@ int main() {
                 // Pan the camera
                 if (mouse_is_pressed && selected_vertex_index == core::kInvalidIndex) {
                     camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
+                }
+            } else if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_e) {
+                    ExportGameData(map);
                 }
             }
         }
