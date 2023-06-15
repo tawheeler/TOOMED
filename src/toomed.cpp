@@ -16,69 +16,11 @@
 #define SCREEN_SIZE_X 1280
 #define SCREEN_SIZE_Y 720
 
-#define MESH_BOUNDING_RADIUS 1000.0f
-#define MESH_MIN_DIST_TO_VERTEX 0.1f
-#define MESH_MIN_DIST_TO_EDGE 0.1f
-
 #define ASSERT(_e, ...)               \
     if (!(_e)) {                      \
         fprintf(stderr, __VA_ARGS__); \
         exit(1);                      \
     }
-
-using namespace std;
-
-// The information associated with one side of an edge between vertices in the map.
-// If this represents the directed edge A->B, then it describes the edge viewed on the right side of
-// A->B.
-struct SideInfo {
-    u16 flags;
-    u16 texture_id;
-    i16 x_offset;  // Texture x offset
-    i16 y_offset;  // Texture y offset
-    usize a_ind;   // The index of vertex A (the source vertex)
-    usize b_ind;   // The index of vertex B (the dest vertex)
-};
-
-// Represents our game map
-struct GameMap {
-    // The editable map vertices.
-    // This will exactly match the vertices in the DelaunayMesh.
-    // (We error if adding any vertex to the DelaunayMesh fails (due to coincidence, for example).)
-    std::vector<common::Vec2f> vertices;
-
-    // All of the map-related side information.
-    // If we have side information for an edge A -> B, then that edge must end up in the mesh.
-    // Edges without side information may exist in the mesh. Such edges are assumed transparent.
-    std::vector<SideInfo> side_infos;
-
-    // Map <a_ind, b_ind> to index in side_infos.
-    std::map<std::tuple<usize, usize>, usize> side_to_info;
-
-    // The map geometry
-    core::DelaunayMesh mesh =
-        core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE);
-
-    // face data (is solid, height, is door, etc.)
-
-    bool HasEdge(int a_ind, int b_ind) {
-        auto tup = std::make_pair(a_ind, b_ind);
-        return side_to_info.find(tup) != side_to_info.end();
-    }
-
-    usize AddEdge(int a_ind, int b_ind) {
-        SideInfo side_info;
-        side_info.a_ind = a_ind;
-        side_info.b_ind = b_ind;
-        side_infos.emplace_back(side_info);
-        usize edge_index = side_infos.size();
-        side_to_info[std::make_pair(a_ind, b_ind)] = edge_index;
-        return edge_index;
-    }
-};
-
-int MapVertexIndexToMeshVertexIndex(int ind) { return ind + 3; }
-int MeshVertexIndexToMapVertexIndex(int ind) { return ind - 3; }
 
 common::Vec2f GlobalToCamera(const common::Vec2f& g, const common::Vec2f& camera_pos,
                              f32 camera_zoom) {
@@ -122,12 +64,14 @@ int FindFaceVertexNearPosition(const common::Vec2f& pos, core::QuarterEdge* qe_f
     return selected_vertex_index;
 }
 
-void ExportGameData(const GameMap& map) {
+void ExportGameData(const core::GameMap& map) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
 
     core::AssetsExporter exporter;
     exporter.AddMeshEntry(map.mesh, "geometry_mesh");
+    exporter.AddSideInfos(map, "side_infos");
+
     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
     exporter.WriteToFile("../toom/assets/toomed.bin");
@@ -158,7 +102,7 @@ int main() {
     ASSERT(texture, "Error creating SDL texture: %s\n", SDL_GetError());
 
     // Create our map
-    GameMap map;
+    core::GameMap map;
     map.vertices.emplace_back(1.0, 1.0);
     map.vertices.emplace_back(7.0, 1.0);
     map.vertices.emplace_back(7.0, 3.0);
@@ -258,8 +202,8 @@ int main() {
                         if (released_vertex_index != core::kInvalidIndex &&
                             released_vertex_index != selected_vertex_index) {
                             // Join those edges
-                            int src = MeshVertexIndexToMapVertexIndex(selected_vertex_index);
-                            int dst = MeshVertexIndexToMapVertexIndex(released_vertex_index);
+                            int src = core::MeshVertexIndexToMapVertexIndex(selected_vertex_index);
+                            int dst = core::MeshVertexIndexToMapVertexIndex(released_vertex_index);
                             if (!map.HasEdge(src, dst)) {
                                 map.AddEdge(src, dst);
                             }
@@ -397,7 +341,8 @@ int main() {
 
         if (selected_vertex_index != -1) {
             // Render our selected vertex
-            const auto& v = map.vertices[MeshVertexIndexToMapVertexIndex(selected_vertex_index)];
+            const auto& v =
+                map.vertices[core::MeshVertexIndexToMapVertexIndex(selected_vertex_index)];
             auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
 
             SDL_Rect rect;
