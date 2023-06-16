@@ -103,7 +103,8 @@ void AssetsExporter::AddSideInfos(const GameMap& game_map, const std::string& na
     for (size_t i = 0; i < game_map.mesh.NumQuarterEdges(); i++) {
         const QuarterEdge* qe = game_map.mesh.GetQuarterEdge(i);
         u16 side_info_index = std::numeric_limits<u16>::max();
-        if (IsPrimalEdge(*qe)) {
+        if (IsPrimalEdge(*qe) && !game_map.mesh.IsBoundaryVertex(qe->vertex) &&
+            !game_map.mesh.IsBoundaryVertex(game_map.mesh.Sym(qe)->vertex)) {
             size_t a_ind = MeshVertexIndexToMapVertexIndex(qe->vertex->index);
             size_t b_ind = MeshVertexIndexToMapVertexIndex(game_map.mesh.Sym(qe)->vertex->index);
             auto it_side = game_map.side_to_info.find(std::make_pair(a_ind, b_ind));
