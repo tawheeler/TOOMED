@@ -64,6 +64,35 @@ int FindFaceVertexNearPosition(const common::Vec2f& pos, core::QuarterEdge* qe_f
     return selected_vertex_index;
 }
 
+void ImportGameData(core::GameMap* map) {
+    std::cout << "--------------------------------------" << std::endl;
+    std::cout << "Importing game data" << std::endl;
+
+    core::AssetsExporter exporter;
+    exporter.LoadAssetsFile("../toom/assets/toomed.bin");
+    std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
+
+    // Clear the map
+    map->Clear();
+
+    // First, attempt to load the geometry mesh to get our vertices.
+    bool success = true;
+    if (exporter.HasEntry("geometry_mesh")) {
+        success &= exporter.LoadMeshEntry(&(map->mesh), "geometry_mesh");
+    } else {
+        success = false;
+        std::cout << "Loaded assets do not include a geometry mesh!" << std::endl;
+    }
+
+    if (success) {
+        // Load the vertices from the geometry mesh.
+        // TODO
+    }
+
+    std::cout << "DONE" << std::endl;
+    std::cout << "--------------------------------------" << std::endl;
+}
+
 void ExportGameData(const core::GameMap& map) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
@@ -75,6 +104,9 @@ void ExportGameData(const core::GameMap& map) {
     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
     exporter.WriteToFile("../toom/assets/toomed.bin");
+
+    std::cout << "DONE" << std::endl;
+    std::cout << "--------------------------------------" << std::endl;
 }
 
 int main() {
@@ -228,6 +260,8 @@ int main() {
             } else if (event.type == SDL_KEYDOWN) {
                 if (event.key.keysym.sym == SDLK_e) {
                     ExportGameData(map);
+                } else if (event.key.keysym.sym == SDLK_i) {
+                    ImportGameData(&map);
                 }
             }
         }

@@ -52,6 +52,63 @@ DelaunayMesh::~DelaunayMesh() {
 }
 
 // ------------------------------------------------------------------------------------------------
+void DelaunayMesh::Clear() {
+    vertices_.clear();
+    quarter_edges_.clear();
+}
+
+// ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::LoadFromData(const u8* data) {
+    // Reset the mesh
+    Clear();
+
+    u32 offset = 0;
+    u32 n_vertices = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    u32 n_quarter_edges = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    // Load the vertices
+    vertices_.reserve(n_vertices);
+    for (u32 i = 0; i < n_vertices; i++) {
+        VertexData* vertex_data = new VertexData();
+
+        vertex_data->index = i;
+        vertex_data->vertex = *(common::Vec2f*)(data + offset);
+        offset += sizeof(common::Vec2f);
+
+        vertices_.push_back(vertex_data);
+    }
+
+    // Load the quarter edges
+    quarter_edges_.reserve(n_quarter_edges);
+    for (u32 i = 0; i < n_quarter_edges; i++) {
+        QuarterEdge* qe = new QuarterEdge();
+        qe->index = i;
+        quarter_edges_.emplace_back(qe);
+    }
+    for (u32 i = 0; i < n_quarter_edges; i++) {
+        QuarterEdge* qe = quarter_edges_[i];
+
+        u32 vertex_index = *(u32*)(data + offset);
+        if (vertex_index != std::numeric_limits<u32>::max()) {
+            qe->vertex = vertices_[vertex_index];
+        } else {
+            qe->vertex = nullptr;
+        }
+
+        offset += sizeof(u32);
+        qe->next = quarter_edges_[*(u32*)(data + offset)];
+        offset += sizeof(u32);
+        qe->rot = quarter_edges_[*(u32*)(data + offset)];
+        offset += sizeof(u32);
+    }
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 QuarterEdge* DelaunayMesh::Next(const QuarterEdge* qe) const { return qe->next; }
 
 // ------------------------------------------------------------------------------------------------

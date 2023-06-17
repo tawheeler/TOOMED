@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "geometry_utils.hpp"
+#include "typedefs.hpp"
 
 namespace core {
 
@@ -53,6 +54,9 @@ class DelaunayMesh {
     size_t NumVertices() const { return vertices_.size(); }
     size_t NumQuarterEdges() const { return quarter_edges_.size(); }
     size_t NumEdges() const { return NumQuarterEdges() / 4; }
+
+    void Clear();
+    bool LoadFromData(const u8* data);
 
     const common::Vec2f& GetVertex(int i) const { return vertices_.at(i)->vertex; }
     QuarterEdge* GetQuarterEdge(int i) const { return quarter_edges_.at(i); }

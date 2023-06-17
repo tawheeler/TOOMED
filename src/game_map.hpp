@@ -43,7 +43,12 @@ struct GameMap {
     core::DelaunayMesh mesh =
         core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE);
 
-    // face data (is solid, height, is door, etc.)
+    void Clear() {
+        vertices.clear();
+        side_infos.clear();
+        side_to_info.clear();
+        mesh.Clear();
+    }
 
     bool HasEdge(int a_ind, int b_ind) {
         auto tup = std::make_pair(a_ind, b_ind);
