@@ -4,7 +4,7 @@
 
 # Compiler settings - Can be customized.
 CC = g++
-CXXFLAGS = -std=c++11 -Wall -g # Note: -g adds proper debugging with symbols
+CXXFLAGS = -std=c++17 -Wall -g # Note: -g adds proper debugging with symbols
 # LDFLAGS = -lSDL2
 LDFLAGS = /usr/local/lib/libSDL2.a -ldl -lpthread
 

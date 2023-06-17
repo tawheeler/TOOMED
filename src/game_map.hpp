@@ -51,13 +51,13 @@ struct GameMap {
     }
 
     usize AddEdge(int a_ind, int b_ind) {
-        SideInfo side_info = {};
+        usize side_info_index = side_infos.size();
+        SideInfo side_info;
         side_info.a_ind = a_ind;
         side_info.b_ind = b_ind;
         side_infos.emplace_back(side_info);
-        usize edge_index = side_infos.size();
-        side_to_info[std::make_pair(a_ind, b_ind)] = edge_index;
-        return edge_index;
+        side_to_info[std::make_pair(a_ind, b_ind)] = side_info_index;
+        return side_info_index;
     }
 };
 
