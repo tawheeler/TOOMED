@@ -3,6 +3,7 @@
 #include <map>
 #include <vector>
 
+#include "assets_exporter.hpp"
 #include "delaunay_mesh.hpp"
 #include "typedefs.hpp"
 
@@ -12,9 +13,12 @@
 
 namespace core {
 
+const std::string kAssetEntryGeometryMesh = "geometry_mesh";
+const std::string kAssetEntrySideInfos = "side_infos";
+
 // The information associated with one side of an edge between vertices in the map.
-// If this represents the directed edge A->B, then it describes the edge viewed on the right side of
-// A->B.
+// If this represents the directed edge A->B, then it describes the edge viewed on the right
+// side of A->B.
 struct SideInfo {
     u16 flags;
     u16 texture_id;
@@ -25,7 +29,11 @@ struct SideInfo {
 };
 
 // Represents our game map
-struct GameMap {
+class GameMap {
+  public:
+    GameMap() = default;
+    ~GameMap() = default;
+
     // The editable map vertices.
     // This will exactly match the vertices in the DelaunayMesh.
     // (We error if adding any vertex to the DelaunayMesh fails (due to coincidence, for example).)
@@ -43,27 +51,26 @@ struct GameMap {
     core::DelaunayMesh mesh =
         core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE);
 
-    void Clear() {
-        vertices.clear();
-        side_infos.clear();
-        side_to_info.clear();
-        mesh.Clear();
-    }
+    void Clear();
 
-    bool HasEdge(int a_ind, int b_ind) {
-        auto tup = std::make_pair(a_ind, b_ind);
-        return side_to_info.find(tup) != side_to_info.end();
-    }
+    bool HasEdge(int a_ind, int b_ind) const;
 
-    usize AddEdge(int a_ind, int b_ind) {
-        usize side_info_index = side_infos.size();
-        SideInfo side_info;
-        side_info.a_ind = a_ind;
-        side_info.b_ind = b_ind;
-        side_infos.emplace_back(side_info);
-        side_to_info[std::make_pair(a_ind, b_ind)] = side_info_index;
-        return side_info_index;
-    }
+    // Insert a directed edge into the game map, returning its index.
+    usize AddDirectedEdge(int a_ind, int b_ind);
+
+    // Write the GameMap entries into the exporter.
+    bool Export(core::AssetsExporter* exporter) const;
+
+    // Load the GameMap from the given file. This results the GameMap.
+    bool Import(const core::AssetsExporter& exporter);
+
+  private:
+    AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
+    AssetsExporterEntry ExportSideInfos(const std::string& name) const;
+
+    bool LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
+                          const core::AssetsExporter& exporter);
+    bool LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter);
 };
 
 int MapVertexIndexToMeshVertexIndex(int ind);

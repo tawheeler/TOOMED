@@ -9,6 +9,7 @@
 
 #include "assets_exporter.hpp"
 #include "delaunay_mesh.hpp"
+#include "game_map.hpp"
 #include "geometry_utils.hpp"
 #include "math_utils.hpp"
 #include "typedefs.hpp"
@@ -72,21 +73,10 @@ void ImportGameData(core::GameMap* map) {
     exporter.LoadAssetsFile("../toom/assets/toomed.bin");
     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
-    // Clear the map
-    map->Clear();
-
-    // First, attempt to load the geometry mesh to get our vertices.
-    bool success = true;
-    if (exporter.HasEntry("geometry_mesh")) {
-        success &= exporter.LoadMeshEntry(&(map->mesh), "geometry_mesh");
-    } else {
-        success = false;
-        std::cout << "Loaded assets do not include a geometry mesh!" << std::endl;
-    }
-
-    if (success) {
-        // Load the vertices from the geometry mesh.
-        // TODO
+    bool succeeded = map->Import(exporter);
+    if (!succeeded) {
+        std::cout << "Failed to load game map! Clearing possibly corrupted map." << std::endl;
+        map->Clear();
     }
 
     std::cout << "DONE" << std::endl;
@@ -98,8 +88,11 @@ void ExportGameData(const core::GameMap& map) {
     std::cout << "Exporting game data" << std::endl;
 
     core::AssetsExporter exporter;
-    exporter.AddMeshEntry(map.mesh, "geometry_mesh");
-    exporter.AddSideInfos(map, "side_infos");
+    bool succeeded = map.Export(&exporter);
+    if (!succeeded) {
+        std::cout << "Failure while exporting game map! Not written to file." << std::endl;
+        return;
+    }
 
     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
@@ -237,7 +230,7 @@ int main() {
                             int src = core::MeshVertexIndexToMapVertexIndex(selected_vertex_index);
                             int dst = core::MeshVertexIndexToMapVertexIndex(released_vertex_index);
                             if (!map.HasEdge(src, dst)) {
-                                map.AddEdge(src, dst);
+                                map.AddDirectedEdge(src, dst);
                             }
 
                             // Recompute the mesh if necessary
