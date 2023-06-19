@@ -16,6 +16,8 @@ namespace core {
 const std::string kAssetEntryGeometryMesh = "geometry_mesh";
 const std::string kAssetEntrySideInfos = "side_infos";
 
+constexpr u16 kSideInfoFlag_DARK = 1;
+
 // The information associated with one side of an edge between vertices in the map.
 // If this represents the directed edge A->B, then it describes the edge viewed on the right
 // side of A->B.

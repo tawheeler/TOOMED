@@ -3,6 +3,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "math_utils.hpp"
+
 namespace core {
 
 struct ExportedSideInfo {
@@ -100,6 +102,20 @@ AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
                                                .texture_id = side_info.texture_id,
                                                .x_offset = side_info.x_offset,
                                                .y_offset = side_info.y_offset};
+
+        // TEMP
+        exported_side_info.flags = 0;
+        // Calculate the angle of the side info, and set it to shaded depending.
+        common::Vec2f a = vertices[side_info.a_ind];
+        common::Vec2f b = vertices[side_info.b_ind];
+        float angle = atan2(b.y - a.y, b.x - a.x);
+        float angledist =
+            std::min(common::AngleDist(angle, 0.0f), common::AngleDist(angle, 3.14159265f));
+        if (angledist > M_PI / 4) {
+            // shaded
+            exported_side_info.flags |= kSideInfoFlag_DARK;
+        }
+
         buffer.write(reinterpret_cast<const char*>(&exported_side_info),
                      sizeof(exported_side_info));
     }
@@ -181,6 +197,7 @@ bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter&
         side_infos.emplace_back(side_info);
     }
 
+    // Set source and dest from side to info list.
     for (size_t i = 0; i < mesh.NumQuarterEdges(); i++) {
         u16 side_info_index = *(u16*)(data + offset);
         offset += sizeof(u16);
