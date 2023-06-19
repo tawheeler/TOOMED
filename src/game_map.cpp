@@ -189,6 +189,9 @@ bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter&
             const QuarterEdge* qe = mesh.GetQuarterEdge(i);
             side_info.a_ind = MeshVertexIndexToMapVertexIndex(qe->vertex->index);
             side_info.b_ind = MeshVertexIndexToMapVertexIndex(mesh.Sym(qe)->vertex->index);
+
+            // Update side-to-info.
+            side_to_info[std::make_pair(side_info.a_ind, side_info.b_ind)] = side_info_index;
         }
     }
 
@@ -221,8 +224,6 @@ bool GameMap::Import(const core::AssetsExporter& exporter) {
 
     if (success) {
         success &= LoadSideInfos(kAssetEntrySideInfos, exporter);
-
-        // Update side_to_info. TODO
     }
 
     return success;
