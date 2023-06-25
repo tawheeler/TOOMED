@@ -32,6 +32,16 @@ bool GameMap::HasEdge(int a_ind, int b_ind) const {
 }
 
 // ------------------------------------------------------------------------------------------------
+std::optional<usize> GameMap::GetEdgeIndex(int a_ind, int b_ind) const {
+    auto tup = std::make_pair(a_ind, b_ind);
+    auto it = side_to_info.find(tup);
+    if (it != side_to_info.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+// ------------------------------------------------------------------------------------------------
 usize GameMap::AddDirectedEdge(int a_ind, int b_ind) {
     usize side_info_index = side_infos.size();
     SideInfo side_info;
@@ -103,7 +113,7 @@ AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
                                                .x_offset = side_info.x_offset,
                                                .y_offset = side_info.y_offset};
 
-        // TEMP
+        // TEMP - MOVE TO BETTER PLACE.
         exported_side_info.flags = 0;
         // Calculate the angle of the side info, and set it to shaded depending.
         common::Vec2f a = vertices[side_info.a_ind];

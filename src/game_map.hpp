@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "assets_exporter.hpp"
@@ -56,6 +57,7 @@ class GameMap {
     void Clear();
 
     bool HasEdge(int a_ind, int b_ind) const;
+    std::optional<usize> GetEdgeIndex(int a_ind, int b_ind) const;
 
     // Insert a directed edge into the game map, returning its index.
     usize AddDirectedEdge(int a_ind, int b_ind);
