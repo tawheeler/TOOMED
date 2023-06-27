@@ -50,6 +50,14 @@ std::optional<usize> GameMap::GetEdgeIndex(int a_ind, int b_ind) const {
 }
 
 // ------------------------------------------------------------------------------------------------
+usize GameMap::AddVertex(const common::Vec2f& pos) {
+    usize index = vertices_.size();
+    vertices_.push_back(pos);
+    InvalidateMesh();  // We will need to re-generate the mesh
+    return index;
+}
+
+// ------------------------------------------------------------------------------------------------
 usize GameMap::AddDirectedEdge(int a_ind, int b_ind) {
     usize side_info_index = side_infos_.size();
     SideInfo side_info;
@@ -57,7 +65,38 @@ usize GameMap::AddDirectedEdge(int a_ind, int b_ind) {
     side_info.b_ind = b_ind;
     side_infos_.emplace_back(side_info);
     side_to_info_[std::make_pair(a_ind, b_ind)] = side_info_index;
+
+    // Invalidate the mesh if this is not aleady an edge in our mesh.
+    if (HasMesh()) {
+        int mesh_ind_a = MapVertexIndexToMeshVertexIndex(a_ind);
+        int mesh_ind_b = MapVertexIndexToMeshVertexIndex(b_ind);
+        if (mesh_->GetQuarterEdge(mesh_ind_a, mesh_ind_b) == nullptr) {
+            InvalidateMesh();
+        }
+    }
+
+    // InvalidateMesh();  // We will need to re-generate the mesh
     return side_info_index;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool GameMap::RemoveVertex(usize vertex_index) {
+    if (vertex_index >= vertices_.size()) {
+        return false;
+    }
+
+    // As a sanity check, verify that no sideinfos share this edge.
+    // @efficiency This is expensive.
+    for (const auto& side_info : side_infos_) {
+        if (side_info.a_ind == vertex_index || side_info.b_ind == vertex_index) {
+            return false;
+        }
+    }
+
+    // Remove the vertex
+    vertices_.erase(vertices_.begin() + vertex_index);
+
+    return true;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -70,11 +109,42 @@ bool GameMap::RemoveDirectedEdge(usize edge_index) {
     const SideInfo& side_info = side_infos_[edge_index];
     side_to_info_.erase(std::make_pair(side_info.a_ind, side_info.b_ind));
 
+    // CONTINUE HERE.
+    // TODO: Update side-to-info because we need to update all of the indices for things higher than
+    // what we removed. AAAAARG.
+    //       Maybe just have an ordered map of side infos instead of a list plus map?
+    //       I also need each vertex to have a uid, so that if I delete a vertex I don't have to
+    //       update all side_infos.
+    //       ????
+
     // Remove the item for side_infos
     side_infos_.erase(side_infos_.begin() + edge_index);
 
-    // This action invalidates the Delaunay mesh.
-    mesh_.reset();
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool GameMap::ConstructMesh() {
+    // Create an empty mesh with the 3 bounding vertices
+    mesh_.reset(new core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX,
+                                       MESH_MIN_DIST_TO_EDGE));
+
+    // Add all vertices
+    for (const auto& v : vertices_) {
+        int new_vertex = mesh_->AddDelaunayVertex(v);
+        if (new_vertex == core::kInvalidIndex) {
+            InvalidateMesh();
+            return false;
+        }
+    }
+
+    // Constrain all edges
+    for (const auto& side_info : side_infos_) {
+        if (!mesh_->ConstrainEdge(side_info.a_ind, side_info.b_ind)) {
+            InvalidateMesh();
+            return false;
+        }
+    }
 
     return true;
 }

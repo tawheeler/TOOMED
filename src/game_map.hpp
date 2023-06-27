@@ -53,11 +53,21 @@ class GameMap {
     bool HasMesh() const;
     core::DelaunayMesh* GetMesh() const { return mesh_.get(); }  // may be nullptr
 
+    // Insert a new vertex into the mesh.
+    usize AddVertex(const common::Vec2f& pos);
+
     // Insert a directed edge into the game map, returning its index.
     usize AddDirectedEdge(int a_ind, int b_ind);
 
-    // Remove a directed edge (side_info). This action invalidates the mesh.
+    // Remove a vertex (side_info). Can only be called if there are no ajoining sides.
+    // This action invalidates the mesh.
+    bool RemoveVertex(usize edge_index);
+
+    // Remove a directed edge (side_info). This action does not invalidate the mesh.
     bool RemoveDirectedEdge(usize edge_index);
+
+    // Attempt to construct the Delaunay mesh.
+    bool ConstructMesh();
 
     // Write the GameMap entries into the exporter.
     bool Export(core::AssetsExporter* exporter) const;

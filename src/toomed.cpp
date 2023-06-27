@@ -100,52 +100,6 @@ int main() {
     // Create our map
     core::GameMap map;
 
-    // TODO
-    // map.vertices.emplace_back(1.0, 1.0);
-    // map.vertices.emplace_back(7.0, 1.0);
-    // map.vertices.emplace_back(7.0, 3.0);
-    // map.vertices.emplace_back(6.0, 3.0);
-    // map.vertices.emplace_back(6.0, 4.0);
-    // map.vertices.emplace_back(9.0, 4.0);
-    // map.vertices.emplace_back(9.0, 3.0);
-    // map.vertices.emplace_back(9.0, 1.0);
-    // map.vertices.emplace_back(12.0, 1.0);
-    // map.vertices.emplace_back(12.0, 7.0);
-    // map.vertices.emplace_back(9.0, 6.0);
-    // map.vertices.emplace_back(9.0, 5.0);
-    // map.vertices.emplace_back(6.0, 5.0);
-    // map.vertices.emplace_back(6.0, 6.0);
-    // map.vertices.emplace_back(7.0, 6.0);
-    // map.vertices.emplace_back(7.0, 7.0);
-    // map.vertices.emplace_back(1.0, 7.0);
-    // map.vertices.emplace_back(0.0, 0.0);
-    // map.vertices.emplace_back(13.0, 0.0);
-    // map.vertices.emplace_back(13.0, 8.0);
-    // map.vertices.emplace_back(0.0, 8.0);
-
-    // map.vertices.emplace_back(2.0, 2.0);
-    // map.vertices.emplace_back(3.0, 2.0);
-    // map.vertices.emplace_back(3.0, 3.0);
-    // map.vertices.emplace_back(2.0, 3.0);
-
-    // map.vertices.emplace_back(3.0, 5.0);
-    // map.vertices.emplace_back(4.0, 5.0);
-    // map.vertices.emplace_back(4.0, 6.0);
-    // map.vertices.emplace_back(3.0, 6.0);
-
-    // // Add all vertices
-    // for (const auto& v : map.vertices) {
-    //     int new_vertex = map.mesh.AddDelaunayVertex(v);
-    //     ASSERT(new_vertex != core::kInvalidIndex, "Failed to add vertex into mesh\n");
-    // }
-
-    // // Constrain all edges
-    // for (const auto& side_info : map.side_infos) {
-    //     ASSERT(map.mesh.ConstrainEdge(side_info.a_ind, side_info.b_ind),
-    //            "Failed to constrain edge %d -> %d\n", (int)(side_info.a_ind),
-    //            (int)(side_info.b_ind));
-    // }
-
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
     f32 camera_zoom = 50.0;
@@ -214,13 +168,14 @@ int main() {
                             if (!map.HasEdge(src, dst)) {
                                 map.AddDirectedEdge(src, dst);
                             }
-
-                            // Recompute the mesh if necessary
-                            // TODO
-                            // if (!map.mesh.HasEdge(*selected_vertex_index,
-                            // *released_vertex_index)) {
-                            map.InvalidateMesh();
-                            // }
+                        }
+                    } else {
+                        // We do not have a selected vertex index
+                        const bool holding_v = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_V];
+                        const bool did_not_drag = common::Norm(mouse_pos - mouse_click_pos) < 0.2;
+                        if (holding_v && did_not_drag) {
+                            // Add a new vertex.
+                            map.AddVertex(mouse_click_pos);
                         }
                     }
                 }
@@ -249,11 +204,18 @@ int main() {
                     ExportGameData(map);
                 } else if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
+                } else if (event.key.keysym.sym == SDLK_r) {
+                    if (!map.HasMesh()) {
+                        bool success = map.ConstructMesh();
+                        if (!success) {
+                            std::cout << "Failed to regenerate mesh" << std::endl;
+                        }
+                    }
                 } else if (event.key.keysym.sym == SDLK_DELETE) {
                     // Delete key pressed!
                     if (selected_vertex_index) {
-                        std::cout << "Delete vertex! [NOT IMPLEMENTED]" << std::endl;
-                        // TODO map.RemoveVertex(*selected_vertex_index);
+                        std::cout << "Delete vertex!" << std::endl;
+                        map.RemoveVertex(*selected_vertex_index);
                         selected_vertex_index = std::nullopt;
                     }
                     if (selected_edge_index) {
