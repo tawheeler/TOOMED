@@ -36,72 +36,6 @@ common::Vec2f CameraToGlobal(const common::Vec2f& c, const common::Vec2f& camera
     return g_offset / camera_zoom + camera_pos;
 }
 
-int FindFaceVertexNearPosition(const common::Vec2f& pos, core::QuarterEdge* qe_face,
-                               const core::DelaunayMesh& mesh, f32 tolerance = 0.3) {
-    core::QuarterEdge* qe_a = mesh.GetTriangleQuarterEdge1(qe_face);
-    core::QuarterEdge* qe_b = mesh.GetTriangleQuarterEdge2(qe_face);
-    core::QuarterEdge* qe_c = mesh.GetTriangleQuarterEdge3(qe_face);
-    const common::Vec2f& a = qe_a->vertex->vertex;
-    const common::Vec2f& b = qe_b->vertex->vertex;
-    const common::Vec2f& c = qe_c->vertex->vertex;
-
-    f32 dist_a = common::Norm(a - pos);
-    f32 dist_b = common::Norm(b - pos);
-    f32 dist_c = common::Norm(c - pos);
-
-    int selected_vertex_index = core::kInvalidIndex;
-    f32 min_distance = tolerance;
-    if (dist_a < min_distance) {
-        selected_vertex_index = qe_a->vertex->index;
-        min_distance = dist_a;
-    }
-    if (dist_b < min_distance) {
-        selected_vertex_index = qe_b->vertex->index;
-        min_distance = dist_b;
-    }
-    if (dist_c < min_distance) {
-        selected_vertex_index = qe_c->vertex->index;
-        // min_distance = dist_c;
-    }
-    return selected_vertex_index;
-}
-
-std::optional<std::pair<int, int>> FindFaceEdgeNearPosition(const common::Vec2f& pos,
-                                                            core::QuarterEdge* qe_face,
-                                                            const core::DelaunayMesh& mesh,
-                                                            f32 tolerance = 0.2) {
-    core::QuarterEdge* qe_a = mesh.GetTriangleQuarterEdge1(qe_face);
-    core::QuarterEdge* qe_b = mesh.GetTriangleQuarterEdge2(qe_face);
-    core::QuarterEdge* qe_c = mesh.GetTriangleQuarterEdge3(qe_face);
-    const common::Vec2f& a = qe_a->vertex->vertex;
-    const common::Vec2f& b = qe_b->vertex->vertex;
-    const common::Vec2f& c = qe_c->vertex->vertex;
-
-    f32 dist_ab = common::GetDistanceToLine(pos, a, b);
-    f32 dist_bc = common::GetDistanceToLine(pos, b, c);
-    f32 dist_ca = common::GetDistanceToLine(pos, c, a);
-
-    std::pair<int, int> selected_edge = std::make_pair(core::kInvalidIndex, core::kInvalidIndex);
-    f32 min_distance = tolerance;
-    if (dist_ab < min_distance) {
-        selected_edge = std::make_pair(qe_a->vertex->index, qe_b->vertex->index);
-        min_distance = dist_ab;
-    }
-    if (dist_bc < min_distance) {
-        selected_edge = std::make_pair(qe_b->vertex->index, qe_c->vertex->index);
-        min_distance = dist_bc;
-    }
-    if (dist_ca < min_distance) {
-        selected_edge = std::make_pair(qe_c->vertex->index, qe_a->vertex->index);
-        min_distance = dist_ca;
-    }
-    if (min_distance >= tolerance) {
-        return std::nullopt;
-    }
-    return std::make_pair(core::MeshVertexIndexToMapVertexIndex(selected_edge.first),
-                          core::MeshVertexIndexToMapVertexIndex(selected_edge.second));
-}
-
 void ImportGameData(core::GameMap* map) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Importing game data" << std::endl;
@@ -221,9 +155,10 @@ int main() {
     common::Vec2f mouse_pos = {0.0, 0.0};
     common::Vec2f mouse_click_pos = {0.0, 0.0};
     common::Vec2f camera_pos_at_mouse_click = {0.0, 0.0};
-    int selected_vertex_index = core::kInvalidIndex;  // TODO: optional?
+    std::optional<usize> selected_vertex_index = std::nullopt;
     std::optional<usize> selected_edge_index = std::nullopt;
-    // core::QuarterEdge* qe_mouse_face = map.mesh.GetEnclosingTriangle(mouse_pos); // TODO
+    core::QuarterEdge* qe_mouse_face = nullptr;
+    // map.mesh.GetEnclosingTriangle(mouse_pos); // TODO
 
     bool continue_running = true;
     while (continue_running) {
@@ -251,70 +186,62 @@ int main() {
                                                      camera_pos, camera_zoom);
                     camera_pos_at_mouse_click = camera_pos;
 
-                    // TODO
                     // Check for a selected vertex near the current mouse position
-                    // selected_vertex_index =
-                    //     FindFaceVertexNearPosition(mouse_click_pos, qe_mouse_face, map.mesh);
+                    selected_vertex_index =
+                        map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
 
-                    // TODO
                     // Check for a selected edge near the current mouse position if we did not
                     // select a vertex
-                    // selected_edge_index = std::nullopt;
-                    // if (selected_vertex_index == core::kInvalidIndex) {
-                    //     std::optional<std::pair<int, int>> selected_edge =
-                    //         FindFaceEdgeNearPosition(mouse_click_pos, qe_mouse_face, map.mesh);
-                    //     std::cout << "A" << std::endl;
-                    //     if (selected_edge) {
-                    //         fprintf(stdout, "Found edge %d -> %d\n", selected_edge->first,
-                    //                 selected_edge->second);
-                    //         // Check our existing edges and pick the best one.
-                    //         // Note that we should check a->b first, and if we don't find
-                    //         // that, check b->a.
-                    //         if (map.HasEdge(selected_edge->first, selected_edge->second)) {
-                    //             // a->b
-                    //             selected_edge_index =
-                    //                 map.GetEdgeIndex(selected_edge->first,
-                    //                 selected_edge->second);
-                    //             fprintf(stdout, "Selected edge %lu\n",
-                    //             selected_edge_index.value());
-                    //         } else if (map.HasEdge(selected_edge->second, selected_edge->first))
-                    //         {
-                    //             // b->a
-                    //             selected_edge_index =
-                    //                 map.GetEdgeIndex(selected_edge->second,
-                    //                 selected_edge->first);
-                    //             fprintf(stdout, "Selected edge %lu\n",
-                    //             selected_edge_index.value());
-                    //         }
-                    //     }
-                    // }
+                    selected_edge_index = std::nullopt;
+                    if (!selected_vertex_index) {
+                        std::optional<std::pair<int, int>> selected_edge =
+                            map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                        std::cout << "A" << std::endl;
+                        if (selected_edge) {
+                            fprintf(stdout, "Found edge %d -> %d\n", selected_edge->first,
+                                    selected_edge->second);
+                            // Check our existing edges and pick the best one.
+                            // Note that we should check a->b first, and if we don't find
+                            // that, check b->a.
+                            if (map.HasEdge(selected_edge->first, selected_edge->second)) {
+                                // a->b
+                                selected_edge_index =
+                                    map.GetEdgeIndex(selected_edge->first, selected_edge->second);
+                                fprintf(stdout, "Selected edge %lu\n", selected_edge_index.value());
+                            } else if (map.HasEdge(selected_edge->second, selected_edge->first)) {
+                                // b->a
+                                selected_edge_index =
+                                    map.GetEdgeIndex(selected_edge->second, selected_edge->first);
+                                fprintf(stdout, "Selected edge %lu\n", selected_edge_index.value());
+                            }
+                        }
+                    }
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP) {
                 if (mouse_is_pressed) {
                     // New release
                     mouse_is_pressed = false;
 
-                    if (selected_vertex_index != core::kInvalidIndex) {
-                        // TODO
+                    if (selected_vertex_index) {
                         // Check for a selected vertex near the released mouse position
-                        // int released_vertex_index =
-                        //     FindFaceVertexNearPosition(mouse_pos, qe_mouse_face, map.mesh);
-                        // if (released_vertex_index != core::kInvalidIndex &&
-                        //     released_vertex_index != selected_vertex_index) {
-                        //     // Join those edges
-                        //     int src =
-                        //     core::MeshVertexIndexToMapVertexIndex(selected_vertex_index); int dst
-                        //     = core::MeshVertexIndexToMapVertexIndex(released_vertex_index); if
-                        //     (!map.HasEdge(src, dst)) {
-                        //         map.AddDirectedEdge(src, dst);
-                        //     }
+                        std::optional<usize> released_vertex_index =
+                            map.FindVertexNearPosition(mouse_pos, qe_mouse_face);
+                        if (released_vertex_index.has_value() &&
+                            released_vertex_index != selected_vertex_index) {
+                            // Join those edges
+                            int src = *selected_vertex_index;
+                            int dst = *released_vertex_index;
+                            if (!map.HasEdge(src, dst)) {
+                                map.AddDirectedEdge(src, dst);
+                            }
 
-                        //     // Recompute the mesh if necessary
-                        //     if (!map.mesh.HasEdge(selected_vertex_index, released_vertex_index))
-                        //     {
-                        //         // map.ConstructMesh(); TODO
-                        //     }
-                        // }
+                            // Recompute the mesh if necessary
+                            // TODO
+                            // if (!map.mesh.HasEdge(*selected_vertex_index,
+                            // *released_vertex_index)) {
+                            map.InvalidateMesh();
+                            // }
+                        }
                     }
                 }
             } else if (event.type == SDL_MOUSEMOTION) {
@@ -325,7 +252,7 @@ int main() {
                 // qe_mouse_face = map.mesh.GetEnclosingTriangle(mouse_pos, qe_mouse_face);
 
                 // Pan the camera
-                if (mouse_is_pressed && selected_vertex_index == core::kInvalidIndex) {
+                if (mouse_is_pressed && !selected_vertex_index.has_value()) {
                     camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
                 }
             } else if (event.type == SDL_KEYDOWN) {
@@ -335,13 +262,16 @@ int main() {
                     ImportGameData(&map);
                 } else if (event.key.keysym.sym == SDLK_DELETE) {
                     // Delete key pressed!
-                    if (selected_vertex_index != core::kInvalidIndex) {
-                        std::cout << "Delete vertex! [NOT IMPLEMENTED]" << std::endl;  // TODO
+                    if (selected_vertex_index) {
+                        std::cout << "Delete vertex! [NOT IMPLEMENTED]" << std::endl;
+                        // TODO map.RemoveVertex(*selected_vertex_index);
+                        selected_vertex_index = std::nullopt;
                     }
                     if (selected_edge_index) {
                         // Delete that edge.
                         std::cout << "Delete edge!" << std::endl;
                         map.RemoveDirectedEdge(*selected_edge_index);
+                        selected_edge_index = std::nullopt;
                     }
                 }
             }
@@ -390,13 +320,15 @@ int main() {
             // for (size_t qe_index = 0; qe_index < map.mesh.NumQuarterEdges(); qe_index++) {
             //     core::QuarterEdge* qe = map.mesh.GetQuarterEdge(qe_index);
 
-            //     if (core::IsPrimalEdge(*qe) && !map.mesh.IsBoundaryVertex(qe->vertex)) {
+            //     if (core::IsPrimalEdge(*qe) &&
+            //     !map.mesh.IsBoundaryVertex(qe->vertex)) {
             //         // Get its opposite side.
             //         core::QuarterEdge* qe_sym = map.mesh.Sym(qe);
 
             //         const core::VertexData* a = qe->vertex;
             //         const core::VertexData* b = qe_sym->vertex;
-            //         if (a > b && !map.mesh.IsBoundaryVertex(b)) {  // Avoid rendering edges twice
+            //         if (a > b && !map.mesh.IsBoundaryVertex(b)) {  // Avoid
+            //         rendering edges twice
             //             auto a_cam = GlobalToCamera(a->vertex, camera_pos, camera_zoom);
             //             auto b_cam = GlobalToCamera(b->vertex, camera_pos, camera_zoom);
             //             SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y),
@@ -476,10 +408,9 @@ int main() {
                                (int)(d_cam.y));
         }
 
-        if (selected_vertex_index != -1) {
+        if (selected_vertex_index) {
             // Render our selected vertex
-            const auto& v =
-                map.GetVertices()[core::MeshVertexIndexToMapVertexIndex(selected_vertex_index)];
+            const auto& v = map.GetVertices()[*selected_vertex_index];
             auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
 
             SDL_Rect rect;
@@ -512,8 +443,8 @@ int main() {
             }
         }
 
-        // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor refresh rate.
-        // (30Hz)
+        // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor
+        // refresh rate. (30Hz)
         SDL_RenderPresent(renderer);
     }
 
