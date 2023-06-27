@@ -158,7 +158,6 @@ int main() {
     std::optional<usize> selected_vertex_index = std::nullopt;
     std::optional<usize> selected_edge_index = std::nullopt;
     core::QuarterEdge* qe_mouse_face = nullptr;
-    // map.mesh.GetEnclosingTriangle(mouse_pos); // TODO
 
     bool continue_running = true;
     while (continue_running) {
@@ -194,27 +193,8 @@ int main() {
                     // select a vertex
                     selected_edge_index = std::nullopt;
                     if (!selected_vertex_index) {
-                        std::optional<std::pair<int, int>> selected_edge =
+                        selected_edge_index =
                             map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
-                        std::cout << "A" << std::endl;
-                        if (selected_edge) {
-                            fprintf(stdout, "Found edge %d -> %d\n", selected_edge->first,
-                                    selected_edge->second);
-                            // Check our existing edges and pick the best one.
-                            // Note that we should check a->b first, and if we don't find
-                            // that, check b->a.
-                            if (map.HasEdge(selected_edge->first, selected_edge->second)) {
-                                // a->b
-                                selected_edge_index =
-                                    map.GetEdgeIndex(selected_edge->first, selected_edge->second);
-                                fprintf(stdout, "Selected edge %lu\n", selected_edge_index.value());
-                            } else if (map.HasEdge(selected_edge->second, selected_edge->first)) {
-                                // b->a
-                                selected_edge_index =
-                                    map.GetEdgeIndex(selected_edge->second, selected_edge->first);
-                                fprintf(stdout, "Selected edge %lu\n", selected_edge_index.value());
-                            }
-                        }
                     }
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP) {
@@ -248,8 +228,17 @@ int main() {
                 // Move the mouse
                 mouse_pos = CameraToGlobal(common::Vec2f(event.motion.x, event.motion.y),
                                            camera_pos, camera_zoom);
-                // TODO
-                // qe_mouse_face = map.mesh.GetEnclosingTriangle(mouse_pos, qe_mouse_face);
+                // Update the mouse face
+                if (map.HasMesh()) {
+                    if (qe_mouse_face != nullptr) {
+                        qe_mouse_face =
+                            map.GetMesh()->GetEnclosingTriangle(mouse_pos, qe_mouse_face);
+                    } else {
+                        qe_mouse_face = map.GetMesh()->GetEnclosingTriangle(mouse_pos);
+                    }
+                } else {
+                    qe_mouse_face = nullptr;
+                }
 
                 // Pan the camera
                 if (mouse_is_pressed && !selected_vertex_index.has_value()) {
@@ -281,62 +270,60 @@ int main() {
         SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
         SDL_RenderClear(renderer);
 
-        {
-            // TODO
-            // // Fill enclosing triangle
-            // const common::Vec2f& a = map.mesh.GetTriangleVertex1(qe_mouse_face);
-            // const common::Vec2f& b = map.mesh.GetTriangleVertex2(qe_mouse_face);
-            // const common::Vec2f& c = map.mesh.GetTriangleVertex3(qe_mouse_face);
+        if (map.HasMesh() && qe_mouse_face != nullptr) {
+            core::DelaunayMesh* mesh = map.GetMesh();
 
-            // auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
-            // auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
-            // auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+            // Fill enclosing triangle
+            const common::Vec2f& a = mesh->GetTriangleVertex1(qe_mouse_face);
+            const common::Vec2f& b = mesh->GetTriangleVertex2(qe_mouse_face);
+            const common::Vec2f& c = mesh->GetTriangleVertex3(qe_mouse_face);
 
-            // SDL_Vertex triangle[3];
-            // triangle[0] = {
-            //     SDL_FPoint{a_cam.x, a_cam.y},
-            //     SDL_Color{55, 55, 55, 255},
-            //     SDL_FPoint{0},
-            // };
-            // triangle[1] = {
-            //     SDL_FPoint{b_cam.x, b_cam.y},
-            //     SDL_Color{55, 55, 55, 255},
-            //     SDL_FPoint{0},
-            // };
-            // triangle[2] = {
-            //     SDL_FPoint{c_cam.x, c_cam.y},
-            //     SDL_Color{55, 55, 55, 255},
-            //     SDL_FPoint{0},
-            // };
-            // SDL_RenderGeometry(renderer, nullptr, triangle, 3, nullptr, 0);
+            auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
+            auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
+            auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+
+            SDL_Vertex triangle[3];
+            triangle[0] = {
+                SDL_FPoint{a_cam.x, a_cam.y},
+                SDL_Color{55, 55, 55, 255},
+                SDL_FPoint{0},
+            };
+            triangle[1] = {
+                SDL_FPoint{b_cam.x, b_cam.y},
+                SDL_Color{55, 55, 55, 255},
+                SDL_FPoint{0},
+            };
+            triangle[2] = {
+                SDL_FPoint{c_cam.x, c_cam.y},
+                SDL_Color{55, 55, 55, 255},
+                SDL_FPoint{0},
+            };
+            SDL_RenderGeometry(renderer, nullptr, triangle, 3, nullptr, 0);
         }
 
-        {
+        if (map.HasMesh()) {
             // Render the mesh
+            core::DelaunayMesh* mesh = map.GetMesh();
 
-            // TODO
-            // SDL_SetRenderDrawColor(renderer, 0xFF, 0x48, 0xCF, 0xFF);
+            SDL_SetRenderDrawColor(renderer, 0xFF, 0x48, 0xCF, 0xFF);
 
-            // for (size_t qe_index = 0; qe_index < map.mesh.NumQuarterEdges(); qe_index++) {
-            //     core::QuarterEdge* qe = map.mesh.GetQuarterEdge(qe_index);
+            for (size_t qe_index = 0; qe_index < mesh->NumQuarterEdges(); qe_index++) {
+                core::QuarterEdge* qe = mesh->GetQuarterEdge(qe_index);
 
-            //     if (core::IsPrimalEdge(*qe) &&
-            //     !map.mesh.IsBoundaryVertex(qe->vertex)) {
-            //         // Get its opposite side.
-            //         core::QuarterEdge* qe_sym = map.mesh.Sym(qe);
+                if (core::IsPrimalEdge(*qe) && !mesh->IsBoundaryVertex(qe->vertex)) {
+                    // Get its opposite side.
+                    core::QuarterEdge* qe_sym = mesh->Sym(qe);
 
-            //         const core::VertexData* a = qe->vertex;
-            //         const core::VertexData* b = qe_sym->vertex;
-            //         if (a > b && !map.mesh.IsBoundaryVertex(b)) {  // Avoid
-            //         rendering edges twice
-            //             auto a_cam = GlobalToCamera(a->vertex, camera_pos, camera_zoom);
-            //             auto b_cam = GlobalToCamera(b->vertex, camera_pos, camera_zoom);
-            //             SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y),
-            //             (int)(b_cam.x),
-            //                                (int)(b_cam.y));
-            //         }
-            //     }
-            // }
+                    const core::VertexData* a = qe->vertex;
+                    const core::VertexData* b = qe_sym->vertex;
+                    if (a > b && !mesh->IsBoundaryVertex(b)) {  // Avoid rendering edges twice
+                        auto a_cam = GlobalToCamera(a->vertex, camera_pos, camera_zoom);
+                        auto b_cam = GlobalToCamera(b->vertex, camera_pos, camera_zoom);
+                        SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
+                                           (int)(b_cam.y));
+                    }
+                }
+            }
         }
 
         {  // Render all side_infos (these are directed)

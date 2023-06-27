@@ -32,6 +32,14 @@ bool GameMap::HasEdge(int a_ind, int b_ind) const {
 }
 
 // ------------------------------------------------------------------------------------------------
+bool GameMap::HasMesh() const {
+    if (mesh_) {
+        return true;
+    }
+    return false;
+};
+
+// ------------------------------------------------------------------------------------------------
 std::optional<usize> GameMap::GetEdgeIndex(int a_ind, int b_ind) const {
     auto tup = std::make_pair(a_ind, b_ind);
     auto it = side_to_info_.find(tup);
@@ -345,13 +353,16 @@ std::optional<usize> GameMap::FindVertexNearPosition(core::DelaunayMesh* mesh,
         selected_vertex_index = qe_c->vertex->index;
         // min_distance = dist_c;
     }
+    if (min_distance >= tolerance) {
+        return std::nullopt;
+    }
     return core::MeshVertexIndexToMapVertexIndex(*selected_vertex_index);
 }
 
 // ------------------------------------------------------------------------------------------------
-std::optional<std::pair<usize, usize>> GameMap::FindEdgeNearPosition(const common::Vec2f& pos,
-                                                                     core::QuarterEdge* qe_face,
-                                                                     f32 tolerance) const {
+std::optional<usize> GameMap::FindEdgeNearPosition(const common::Vec2f& pos,
+                                                   core::QuarterEdge* qe_face,
+                                                   f32 tolerance) const {
     if (mesh_ && qe_face != nullptr) {
         // We assume the given quarter edge is in the mesh.
         return FindEdgeNearPosition(mesh_.get(), pos, qe_face, tolerance);
@@ -359,25 +370,26 @@ std::optional<std::pair<usize, usize>> GameMap::FindEdgeNearPosition(const commo
 
     // Otherwise, fall back on iteration.
     // Note that we cannot distinguish between directions.
-    std::optional<std::pair<usize, usize>> closest_edge = std::nullopt;
+    std::optional<usize> closest_edge_index = std::nullopt;
     f32 closest_dist = tolerance;
-    for (const auto& side_info : side_infos_) {
+    for (usize i = 0; i < side_infos_.size(); i++) {
+        const auto& side_info = side_infos_[i];
         const common::Vec2f& a = vertices_[side_info.a_ind];
         const common::Vec2f& b = vertices_[side_info.b_ind];
-        f32 dist = common::GetDistanceToLine(pos, a, b);
+        f32 dist = common::GetDistanceToLineSegment(pos, a, b);
         if (dist < closest_dist) {
             closest_dist = dist;
-            closest_edge = std::make_pair(side_info.a_ind, side_info.b_ind);
+            closest_edge_index = i;
         }
     }
-    return closest_edge;
+    return closest_edge_index;
 }
 
 // ------------------------------------------------------------------------------------------------
-std::optional<std::pair<usize, usize>> GameMap::FindEdgeNearPosition(core::DelaunayMesh* mesh,
-                                                                     const common::Vec2f& pos,
-                                                                     core::QuarterEdge* qe_face,
-                                                                     f32 tolerance) const {
+std::optional<usize> GameMap::FindEdgeNearPosition(core::DelaunayMesh* mesh,
+                                                   const common::Vec2f& pos,
+                                                   core::QuarterEdge* qe_face,
+                                                   f32 tolerance) const {
     core::QuarterEdge* qe_a = mesh->GetTriangleQuarterEdge1(qe_face);
     core::QuarterEdge* qe_b = mesh->GetTriangleQuarterEdge2(qe_face);
     core::QuarterEdge* qe_c = mesh->GetTriangleQuarterEdge3(qe_face);
@@ -389,26 +401,42 @@ std::optional<std::pair<usize, usize>> GameMap::FindEdgeNearPosition(core::Delau
     f32 dist_bc = common::GetDistanceToLine(pos, b, c);
     f32 dist_ca = common::GetDistanceToLine(pos, c, a);
 
-    std::pair<usize, usize> selected_edge =
-        std::make_pair(core::kInvalidIndex, core::kInvalidIndex);
+    usize selected_a_ind = core::kInvalidIndex;
+    usize selected_b_ind = core::kInvalidIndex;
     f32 min_distance = tolerance;
     if (dist_ab < min_distance) {
-        selected_edge = std::make_pair(qe_a->vertex->index, qe_b->vertex->index);
+        selected_a_ind = qe_a->vertex->index;
+        selected_b_ind = qe_b->vertex->index;
         min_distance = dist_ab;
     }
     if (dist_bc < min_distance) {
-        selected_edge = std::make_pair(qe_b->vertex->index, qe_c->vertex->index);
+        selected_a_ind = qe_b->vertex->index;
+        selected_b_ind = qe_c->vertex->index;
         min_distance = dist_bc;
     }
     if (dist_ca < min_distance) {
-        selected_edge = std::make_pair(qe_c->vertex->index, qe_a->vertex->index);
+        selected_a_ind = qe_c->vertex->index;
+        selected_b_ind = qe_a->vertex->index;
         min_distance = dist_ca;
     }
     if (min_distance >= tolerance) {
         return std::nullopt;
     }
-    return std::make_pair(core::MeshVertexIndexToMapVertexIndex(selected_edge.first),
-                          core::MeshVertexIndexToMapVertexIndex(selected_edge.second));
+
+    // Convert from mesh vertex indices to map vertex indices.
+    selected_a_ind = core::MeshVertexIndexToMapVertexIndex(selected_a_ind);
+    selected_b_ind = core::MeshVertexIndexToMapVertexIndex(selected_b_ind);
+
+    // We have selected an edge in the mesh, but it may not correspond to an edge in the game map
+    // (i.e., side info). Check our existing edges and pick the best one. Note that we should check
+    // a->b first, and if we don't find that, check b->a. This makes it possible to select a
+    // particular side based on where the mouse cursor is.
+    if (HasEdge(selected_a_ind, selected_b_ind)) {
+        return GetEdgeIndex(selected_a_ind, selected_b_ind);
+    } else if (HasEdge(selected_b_ind, selected_a_ind)) {
+        return GetEdgeIndex(selected_b_ind, selected_a_ind);
+    }
+    return std::nullopt;
 }
 
 }  // namespace core

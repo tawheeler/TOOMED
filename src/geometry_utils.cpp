@@ -1,5 +1,7 @@
 #include "geometry_utils.hpp"
 
+#include <algorithm>
+
 // #include <clipper2/clipper.h>
 
 namespace common {
@@ -104,6 +106,20 @@ float GetRightHandedness(const Vec2f& a, const Vec2f& b, const Vec2f& c) {
 float GetDistanceToLine(const Vec2f& p, const Vec2f& a, const Vec2f& b) {
     Vec2f delta = b - a;
     return std::abs(delta.x * (a.y - p.y) - delta.y * (a.x - p.x)) / Norm(delta);
+}
+
+// ------------------------------------------------------------------------------------------------
+float GetDistanceToLineSegment(const Vec2f& p, const Vec2f& a, const Vec2f& b) {
+    // Calculate the projection of p onto the line consisting of points a + t*(b-a).
+    // The closest point on the line is at:
+    Vec2f delta = b - a;
+    float t = Dot(p - a, b - a) / Norm(delta);
+
+    // Clamp to [0,1] to stay within the segment.
+    t = std::clamp(t, 0.0f, 1.0f);
+
+    Vec2f closest_pt = a + (b - a) * t;
+    return Norm(p - closest_pt);
 }
 
 // ------------------------------------------------------------------------------------------------

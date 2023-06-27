@@ -50,6 +50,9 @@ class GameMap {
     bool HasEdge(int a_ind, int b_ind) const;
     std::optional<usize> GetEdgeIndex(int a_ind, int b_ind) const;
 
+    bool HasMesh() const;
+    core::DelaunayMesh* GetMesh() const { return mesh_.get(); }  // may be nullptr
+
     // Insert a directed edge into the game map, returning its index.
     usize AddDirectedEdge(int a_ind, int b_ind);
 
@@ -63,19 +66,19 @@ class GameMap {
     bool Import(const core::AssetsExporter& exporter);
 
     // Finds a vertex (map index) near the given position, if there is one.
-    // If there is a mesh, use the provided dual quarter edge (representing a face) to more quickly
-    // locate the vertex. Otherwise, fall back to slow and simple iteration over all vertices.
-    // Always returns a map vertex index.
+    // If there is a mesh, use the provided dual quarter edge representing the face containing pos
+    // to more quickly locate the vertex. Otherwise, fall back to slow and simple iteration over all
+    // vertices. Always returns a map vertex index.
     std::optional<usize> FindVertexNearPosition(const common::Vec2f& pos,
                                                 core::QuarterEdge* qe_face,
                                                 f32 tolerance = 0.3) const;
 
-    // Finds an edge (map index -> map index) near the given position, if there is one.
-    // If there is a mesh, use the provided dual quarter edge (representing a face) to more quickly
-    // locate the vertex. Otherwise, fall back to slow and simple iteration over all edges.
-    std::optional<std::pair<usize, usize>> FindEdgeNearPosition(const common::Vec2f& pos,
-                                                                core::QuarterEdge* qe_face,
-                                                                f32 tolerance = 0.2) const;
+    // Finds an edge near the given position, if there is one.
+    // If there is a mesh, use the provided dual quarter edge representing the face containing pos
+    // to more quickly locate the vertex. Otherwise, fall back to slow and simple iteration over all
+    // edges.
+    std::optional<usize> FindEdgeNearPosition(const common::Vec2f& pos, core::QuarterEdge* qe_face,
+                                              f32 tolerance = 0.2) const;
 
   private:
     AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
@@ -90,12 +93,9 @@ class GameMap {
     std::optional<usize> FindVertexNearPosition(core::DelaunayMesh* mesh, const common::Vec2f& pos,
                                                 core::QuarterEdge* qe_face, f32 tolerance) const;
 
-    // FindEdgeNearPosition when a mesh is present.
-    // The given quarter edge must be in the mesh.
-    std::optional<std::pair<usize, usize>> FindEdgeNearPosition(core::DelaunayMesh* mesh,
-                                                                const common::Vec2f& pos,
-                                                                core::QuarterEdge* qe_face,
-                                                                f32 tolerance) const;
+    // FindEdgeNearPosition when a mesh is present. // The given quarter edge must be in the mesh.
+    std::optional<usize> FindEdgeNearPosition(core::DelaunayMesh* mesh, const common::Vec2f& pos,
+                                              core::QuarterEdge* qe_face, f32 tolerance) const;
 
     // The editable map vertices.
     // This will exactly match the vertices in the DelaunayMesh.

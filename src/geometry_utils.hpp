@@ -144,6 +144,10 @@ float GetRightHandedness(const Vec2f& a, const Vec2f& b, const Vec2f& c);
 // Note that A and B cannot be colocated.
 float GetDistanceToLine(const Vec2f& p, const Vec2f& a, const Vec2f& b);
 
+// Get the distance of point P to the line segment AB.
+// Note that A and B cannot be colocated.
+float GetDistanceToLineSegment(const Vec2f& p, const Vec2f& a, const Vec2f& b);
+
 enum class Intersection : uint8_t {
     UNDEFINED = 0,
     NONE = 1,
