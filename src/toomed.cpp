@@ -13,6 +13,7 @@
 #include "game_map.hpp"
 #include "geometry_utils.hpp"
 #include "math_utils.hpp"
+#include "mesh.hpp"
 #include "typedefs.hpp"
 
 #define SCREEN_SIZE_X 1280
@@ -74,6 +75,8 @@ void ExportGameData(const core::GameMap& map) {
 }
 
 int main() {
+    mesh::DelaunayMesh mymesh(100.0, 0.5, 0.5);
+
     SDL_version ver;
     SDL_GetVersion(&ver);
     fprintf(stdout, "Running with SDL2 version %d.%d.%d\n", ver.major, ver.minor, ver.patch);
