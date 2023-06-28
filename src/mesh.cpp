@@ -7,18 +7,16 @@
 namespace mesh {
 
 // ------------------------------------------------------------------------------------------------
-bool IsDualEdge(const QuarterEdge& qe) { return qe.i_vertex == kInvalidIndex; }
+bool IsValid(VertexIndex i) { return i.i != kInvalidIndex; }
 
 // ------------------------------------------------------------------------------------------------
-bool IsPrimalEdge(const QuarterEdge& qe) { return qe.i_vertex != kInvalidIndex; }
+bool IsValid(QuarterEdgeIndex i) { return i.i != kInvalidIndex; }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// void SwapNexts(QuarterEdge* a, QuarterEdge* b) {
-//     auto tmp = a->next;
-//     a->next = b->next;
-//     b->next = tmp;
-// }
+bool IsDualEdge(const QuarterEdge& qe) { return !IsValid(qe.i_vertex); }
+
+// ------------------------------------------------------------------------------------------------
+bool IsPrimalEdge(const QuarterEdge& qe) { return IsValid(qe.i_vertex); }
 
 // ------------------------------------------------------------------------------------------------
 DelaunayMesh::DelaunayMesh(float bounding_radius, float min_dist_to_vertex,
@@ -29,17 +27,17 @@ DelaunayMesh::DelaunayMesh(float bounding_radius, float min_dist_to_vertex,
     // The triangle radius is 2r + eps(), which guarantees that it is large enough.
     float r = 2 * bounding_radius + min_dist_to_edge + min_dist_to_vertex;
 
-    usize a = AddVertex(r * std::cos(90 * M_PI / 180.0), r * std::sin(90 * M_PI / 180.0));
-    usize b = AddVertex(r * std::cos(210 * M_PI / 180.0), r * std::sin(210 * M_PI / 180.0));
-    usize c = AddVertex(r * std::cos(-30 * M_PI / 180.0), r * std::sin(-30 * M_PI / 180.0));
+    VertexIndex a = AddVertex(r * std::cos(90 * M_PI / 180.0), r * std::sin(90 * M_PI / 180.0));
+    VertexIndex b = AddVertex(r * std::cos(210 * M_PI / 180.0), r * std::sin(210 * M_PI / 180.0));
+    VertexIndex c = AddVertex(r * std::cos(-30 * M_PI / 180.0), r * std::sin(-30 * M_PI / 180.0));
 
-    usize ab = AddEdge(a, b);
-    // QuarterEdge* bc = AddEdge(b, c);
-    // QuarterEdge* ca = AddEdge(c, a);
+    QuarterEdgeIndex ab = AddEdge(a, b);
+    QuarterEdgeIndex bc = AddEdge(b, c);
+    QuarterEdgeIndex ca = AddEdge(c, a);
 
-    // Splice(Sym(ab), bc);
-    // Splice(Sym(bc), ca);
-    // Splice(Sym(ca), ab);
+    Splice(Sym(ab), bc);
+    Splice(Sym(bc), ca);
+    Splice(Sym(ca), ab);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -112,9 +110,10 @@ DelaunayMesh::~DelaunayMesh() {}
 // ------------------------------------------------------------------------------------------------
 // QuarterEdge* DelaunayMesh::Rot(const QuarterEdge* qe) const { return qe->rot; }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::Sym(const QuarterEdge* qe) const { return qe->rot->rot; }
+QuarterEdgeIndex DelaunayMesh::Sym(QuarterEdgeIndex qe) const {
+    return quarter_edges_[quarter_edges_[qe.i].i_rot.i].i_rot;
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -145,99 +144,121 @@ DelaunayMesh::~DelaunayMesh() {}
 // }
 
 // ------------------------------------------------------------------------------------------------
-usize DelaunayMesh::AddVertex(float x, float y) {
-    usize i_vertex = kInvalidIndex;
-    if (i_vertex_free_first_ != kInvalidIndex) {
+VertexIndex DelaunayMesh::AddVertex(float x, float y) {
+    VertexIndex i_vertex = {kInvalidIndex};
+    if (IsValid(i_vertex_free_first_)) {
         // Grab the first item off the free list and use that.
         i_vertex = i_vertex_free_first_;
 
-        VertexData& vertex_data = vertices_[i_vertex];
+        VertexData& vertex_data = Get(i_vertex);
         i_vertex_free_first_ = vertex_data.i_next;
         vertex_data.v = common::Vec2f(x, y);
-        vertex_data.i_next = kInvalidIndex;
+        vertex_data.i_next = {kInvalidIndex};
         vertex_data.i_prev = i_vertex_alive_last_;
 
     } else {
         // If there is no first item in the free list, append a new item
-        i_vertex = vertices_.size();
+        i_vertex = {vertices_.size()};
         VertexData vertex_data = {};
         vertex_data.v = common::Vec2f(x, y);
         vertex_data.i_self = i_vertex;
-        vertex_data.i_next = kInvalidIndex;
+        vertex_data.i_next = {kInvalidIndex};
         vertex_data.i_prev = i_vertex_alive_last_;
         vertices_.push_back(vertex_data);
     }
 
     // Hook up to previous item
-    if (i_vertex_alive_last_ != kInvalidIndex) {
-        vertices_[i_vertex_alive_last_].i_next = i_vertex;
+    if (IsValid(i_vertex_alive_last_)) {
+        Get(i_vertex_alive_last_).i_next = i_vertex;
+    } else {
+        i_vertex_alive_first_ = i_vertex;
     }
     i_vertex_alive_last_ = i_vertex;
+
+    // Keep track of how many alive vertices we have
+    n_vertices_ += 1;
 
     return i_vertex;
 }
 
 // ------------------------------------------------------------------------------------------------
-usize DelaunayMesh::PrepareFreeQuarterEdge() {
-    usize i_qe = kInvalidIndex;
-    if (i_qe_free_first_ != kInvalidIndex) {
+QuarterEdgeIndex DelaunayMesh::PrepareFreeQuarterEdge() {
+    QuarterEdgeIndex i_qe = {kInvalidIndex};
+    if (IsValid(i_qe_free_first_)) {
         // Grab the first item off the free list and use that.
         i_qe = i_qe_free_first_;
 
-        QuarterEdge& qe = quarter_edges_[i_qe];
+        QuarterEdge& qe = Get(i_qe);
         i_qe_free_first_ = qe.i_next;
-        qe.i_next = kInvalidIndex;
+        qe.i_next = {kInvalidIndex};
         qe.i_prev = i_qe_alive_last_;
 
     } else {
         // If there is no first item in the free list, append a new item
-        i_qe = quarter_edges_.size();
+        i_qe = {quarter_edges_.size()};
         QuarterEdge qe = {};
         qe.i_self = i_qe;
-        qe.i_next = kInvalidIndex;
+        qe.i_next = {kInvalidIndex};
         qe.i_prev = i_qe_alive_last_;
         quarter_edges_.push_back(qe);
     }
 
     // Hook up to previous item
-    if (i_qe_alive_last_ != kInvalidIndex) {
-        quarter_edges_[i_qe_alive_last_].i_next = i_qe;
+    if (IsValid(i_qe_alive_last_)) {
+        Get(i_qe_alive_last_).i_next = i_qe;
+    } else {
+        i_qe_alive_first_ = i_qe;
     }
     i_qe_alive_last_ = i_qe;
+
+    // Keep track of how many alive quarter edges we have
+    n_quarter_edges_ += 1;
 
     return i_qe;
 }
 
 // ------------------------------------------------------------------------------------------------
-usize DelaunayMesh::AddEdge(usize i_vertex_a, usize i_vertex_b) {
-    QuarterEdge& qe_ab = quarter_edges_[PrepareFreeQuarterEdge()];
-    QuarterEdge& qe_lr = quarter_edges_[PrepareFreeQuarterEdge()];
-    QuarterEdge& qe_ba = quarter_edges_[PrepareFreeQuarterEdge()];
-    QuarterEdge& qe_rl = quarter_edges_[PrepareFreeQuarterEdge()];
+QuarterEdgeIndex DelaunayMesh::AddEdge(VertexIndex i_vertex_a, VertexIndex i_vertex_b) {
+    // Add them all first, so we avoid issues with memory changing as we push new quarter edges.
+    QuarterEdgeIndex i_ab = PrepareFreeQuarterEdge();
+    QuarterEdgeIndex i_lr = PrepareFreeQuarterEdge();
+    QuarterEdgeIndex i_ba = PrepareFreeQuarterEdge();
+    QuarterEdgeIndex i_rl = PrepareFreeQuarterEdge();
+
+    QuarterEdge& qe_ab = Get(i_ab);
+    QuarterEdge& qe_lr = Get(i_lr);
+    QuarterEdge& qe_ba = Get(i_ba);
+    QuarterEdge& qe_rl = Get(i_rl);
 
     qe_ab.i_vertex = i_vertex_a;
-    qe_lr.i_vertex = kInvalidIndex;
+    qe_lr.i_vertex = {kInvalidIndex};
     qe_ba.i_vertex = i_vertex_b;
-    qe_rl.i_vertex = kInvalidIndex;
+    qe_rl.i_vertex = {kInvalidIndex};
 
-    qe_ab.i_qe_next = qe_ab.i_self;
-    qe_ab.i_qe_rot = qe_lr.i_self;
-    qe_lr.i_qe_next = qe_rl.i_self;
-    qe_lr.i_qe_rot = qe_ba.i_self;
-    qe_ba.i_qe_next = qe_ba.i_self;
-    qe_ba.i_qe_rot = qe_rl.i_self;
-    qe_rl.i_qe_next = qe_lr.i_self;
-    qe_rl.i_qe_rot = qe_ab.i_self;
+    qe_ab.i_nxt = qe_ab.i_self;
+    qe_ab.i_rot = qe_lr.i_self;
+    qe_lr.i_nxt = qe_rl.i_self;
+    qe_lr.i_rot = qe_ba.i_self;
+    qe_ba.i_nxt = qe_ba.i_self;
+    qe_ba.i_rot = qe_rl.i_self;
+    qe_rl.i_nxt = qe_lr.i_self;
+    qe_rl.i_rot = qe_ab.i_self;
 
     return qe_ab.i_self;
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// void DelaunayMesh::Splice(QuarterEdge* a, QuarterEdge* b) {
-//     SwapNexts(a->next->rot, b->next->rot);
-//     SwapNexts(a, b);
-// }
+void DelaunayMesh::SwapNexts(QuarterEdgeIndex a, QuarterEdgeIndex b) {
+    QuarterEdgeIndex tmp = Get(a).i_nxt;
+    Get(a).i_nxt = Get(b).i_nxt;
+    Get(b).i_nxt = tmp;
+}
+
+// ------------------------------------------------------------------------------------------------
+void DelaunayMesh::Splice(QuarterEdgeIndex a, QuarterEdgeIndex b) {
+    SwapNexts(Get(Get(a).i_nxt).i_rot, Get(Get(b).i_nxt).i_rot);
+    SwapNexts(a, b);
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
