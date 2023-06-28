@@ -97,30 +97,29 @@ bool DelaunayMesh::LoadFromData(const u8* data) {
     return true;
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::Next(const QuarterEdge* qe) const { return qe->next; }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::Rot(const QuarterEdge* qe) const { return qe->rot; }
+QuarterEdgeIndex DelaunayMesh::Next(QuarterEdgeIndex qe) const { return Get(qe).i_nxt; }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdgeIndex DelaunayMesh::Sym(QuarterEdgeIndex qe) const {
-    return quarter_edges_[quarter_edges_[qe.i].i_rot.i].i_rot;
+QuarterEdgeIndex DelaunayMesh::Rot(QuarterEdgeIndex qe) const { return Get(qe).i_rot; }
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdgeIndex DelaunayMesh::Sym(QuarterEdgeIndex qe) const { return Get(Get(qe).i_rot).i_rot; }
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdgeIndex DelaunayMesh::Tor(QuarterEdgeIndex qe) const {
+    return Get(Get(Get(qe).i_rot).i_rot).i_rot;
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::Tor(const QuarterEdge* qe) const { return qe->rot->rot->rot; }
+QuarterEdgeIndex DelaunayMesh::Prev(QuarterEdgeIndex qe) const {
+    return Get(Get(Get(qe).i_rot).i_nxt).i_rot;
+}
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::Prev(const QuarterEdge* qe) const { return qe->rot->next->rot; }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::Lnext(const QuarterEdge* qe) const { return Tor(qe)->next->rot; }
+QuarterEdgeIndex DelaunayMesh::Lnext(QuarterEdgeIndex qe) const {
+    return Get(Get(Tor(qe)).i_next).i_rot;
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -129,14 +128,10 @@ QuarterEdgeIndex DelaunayMesh::Sym(QuarterEdgeIndex qe) const {
 //            v == &(vertices_[2]->vertex);
 // }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// bool DelaunayMesh::IsBoundaryVertex(const VertexData& vertex_data) const {
-//     return vertex_data.index <= 2;
-// }
-// bool DelaunayMesh::IsBoundaryVertex(const VertexData* const& vertex_data) const {
-//     return vertex_data->index <= 2;
-// }
+bool DelaunayMesh::IsBoundaryVertex(const VertexData& vertex_data) const {
+    return vertex_data.i_self.i <= 2;  // We assume that we never free the first 3 vertices
+}
 
 // ------------------------------------------------------------------------------------------------
 VertexIndex DelaunayMesh::LivenVertex() {
@@ -388,21 +383,20 @@ void DelaunayMesh::Splice(QuarterEdgeIndex a, QuarterEdgeIndex b) {
 //     return GetTriangleQuarterEdge3(qe_dual)->vertex->vertex;
 // }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// void DelaunayMesh::FlipEdge(QuarterEdge* qe) {
-//     QuarterEdge* qe_sym = Sym(qe);
-//     QuarterEdge* qe_a = Prev(qe);
-//     QuarterEdge* qe_b = Prev(qe_sym);
+void DelaunayMesh::FlipEdgeImpl(QuarterEdgeIndex qe) {
+    QuarterEdgeIndex qe_sym = Sym(qe);
+    QuarterEdgeIndex qe_a = Prev(qe);
+    QuarterEdgeIndex qe_b = Prev(qe_sym);
 
-//     Splice(qe, qe_a);
-//     Splice(qe_sym, qe_b);
-//     Splice(qe, Lnext(qe_a));
-//     Splice(qe_sym, Lnext(qe_b));
+    Splice(qe, qe_a);
+    Splice(qe_sym, qe_b);
+    Splice(qe, Lnext(qe_a));
+    Splice(qe_sym, Lnext(qe_b));
 
-//     qe->vertex = Sym(qe_a)->vertex;
-//     qe_sym->vertex = Sym(qe_b)->vertex;
-// }
+    Get(qe).i_vertex = Get(Sym(qe_a)).i_vertex;
+    Get(qe_sym).i_vertex = Get(Sym(qe_b)).i_vertex;
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -633,31 +627,17 @@ void DelaunayMesh::Splice(QuarterEdgeIndex a, QuarterEdgeIndex b) {
 //     return vertices_.size() - 1;
 // }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::GetQuarterEdge(int i, int j) const {
-//     if (i == j) {
-//         return nullptr;  // Self edges do not exist
-//     }
+QuarterEdgeIndex DelaunayMesh::GetQuarterEdge(VertexIndex a, VertexIndex b) const {
+    // If we already have an edge between these two vertices, we are done.
+    for (const QuarterEdge& qe : quarter_edges_) {
+        if ((qe.i_vertex == a) && (Get(Sym(qe.i_self)).i_vertex == b)) {
+            return qe.i_self;
+        }
+    }
 
-//     int n = NumVertices();
-//     if (i < 0 || i >= n || j < 0 || j >= n) {
-//         return nullptr;  // Invalid index
-//     }
-
-//     // If we already have an edge between these two vertices, we are done.
-//     VertexData* a = vertices_.at(i);
-//     VertexData* b = vertices_.at(j);
-//     for (QuarterEdge* qe : quarter_edges_) {
-//         if (qe->vertex == a) {
-//             if (Sym(qe)->vertex == b) {
-//                 return qe;
-//             }
-//         }
-//     }
-
-//     return nullptr;
-// }
+    return QuarterEdgeIndex({kInvalidIndex});
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -684,6 +664,16 @@ void DelaunayMesh::Splice(QuarterEdgeIndex a, QuarterEdgeIndex b) {
 
 //     return false;
 // }
+
+// ------------------------------------------------------------------------------------------------
+DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f& p) {
+    // TODO
+    InsertVertexResult result = {};
+    result.i_vertex = {kInvalidIndex};
+    result.i_qe = {kInvalidIndex};
+    result.category = InsertVertexResultCategory::OUT_OF_BOUNDS;
+    return result;
+}
 
 // //
 // ------------------------------------------------------------------------------------------------

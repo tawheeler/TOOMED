@@ -13,12 +13,18 @@ constexpr usize kInvalidIndex = std::numeric_limits<usize>::max();
 
 struct VertexIndex {
     usize i;
+
+    bool operator==(const VertexIndex& rhs) const { return i == rhs.i; }
+    bool operator!=(const VertexIndex& rhs) const { return i != rhs.i; }
 };
 
 bool IsValid(VertexIndex i);
 
 struct QuarterEdgeIndex {
     usize i;
+
+    bool operator==(const QuarterEdgeIndex& rhs) const { return i == rhs.i; }
+    bool operator!=(const QuarterEdgeIndex& rhs) const { return i != rhs.i; }
 };
 
 bool IsValid(QuarterEdgeIndex i);
@@ -77,16 +83,38 @@ class DelaunayMesh {
     void Clear();
     bool LoadFromData(const u8* data);
 
-    // const common::Vec2f& GetVertex(int i) const { return vertices_.at(i)->vertex; }
-    // QuarterEdge* GetQuarterEdge(int i) const { return quarter_edges_.at(i); }
+    const common::Vec2f& GetVertex(VertexIndex i) const { return vertices_[i.i].v; }
+    const QuarterEdge& GetQuarterEdge(QuarterEdgeIndex i) const { return quarter_edges_[i.i]; }
 
-    // // Get the quarter edge pointing from i to j, if it exists.
-    // // Note that the current implementation loops over all quarter edges.
-    // QuarterEdge* GetQuarterEdge(int i, int j) const;
+    // Get the quarter edge pointing from i to j, if it exists.
+    // Note that the current implementation loops over all quarter edges.
+    QuarterEdgeIndex GetQuarterEdge(VertexIndex a, VertexIndex b) const;
 
     // // Returns true if an edge from i to j exists.
     // // Note that the current implementation loops over all quarter edges.
     // bool HasEdge(int i, int j) const;
+
+    // Insert a new vertex into our mesh, returning an index to the new vertex.
+    // There are several cases:
+    //    1. The new vertex is inside an existing face.
+    //       We insert 3 new edges to split the face.
+    //       Return the index of the new vertex and an index of any quarter edge with this vertex as
+    //       its source.
+    //    2. The new vertex lies on an existing non-boundary edge.
+    //       We split the edge and add 2 new edges to split the face on either end.
+    //       Return the index of the new vertex and an index of a quarter edge with this vertex as
+    //       its source that points along the split edge.
+    //    3. The new vertex is coincident with an existing vertex.
+    //       Return invalid indices.
+    //    4. The new vertex lies outside the bounding triange.
+    //       Return invalid indices.
+    enum class InsertVertexResultCategory { IN_FACE, ON_EDGE, COINCIDENT, OUT_OF_BOUNDS };
+    struct InsertVertexResult {
+        VertexIndex i_vertex;
+        QuarterEdgeIndex i_qe;
+        InsertVertexResultCategory category;
+    };
+    InsertVertexResult InsertVertex(const common::Vec2f& p);
 
     // // Insert a new vertex into our mesh, and update the mesh to continue to be a Delaunay
     // // triangularization. Returns the index of the added vertex if a new point was added, and
@@ -99,26 +127,25 @@ class DelaunayMesh {
     // // Returns true if this operation was successful.
     // bool ConstrainEdge(int i, int j);
 
-    // // Get the next right-hand (CCW) QuarterEdge with the same origin.
-    // QuarterEdge* Next(const QuarterEdge* qe) const;
+    // Get the next right-hand (CCW) QuarterEdge with the same origin.
+    QuarterEdgeIndex Next(QuarterEdgeIndex qe) const;
 
-    // // Get the next right-hand (CCW) QuarterEdge associated with the same undirected original
-    // edge. QuarterEdge* Rot(const QuarterEdge* qe) const;
+    // Get the next right-hand (CCW) QuarterEdge associated with the same undirected original edge.
+    QuarterEdgeIndex Rot(QuarterEdgeIndex qe) const;
 
     // Get the symmetric QuarterEdge - given QuarterEdge A->B, returns B->A.
     QuarterEdgeIndex Sym(QuarterEdgeIndex qe) const;
 
-    // // Get the next left-hand (CW) QuarterEdge associated with the same undirected original
-    // edge.
-    // // This is rot, but the other way.
-    // QuarterEdge* Tor(const QuarterEdge* qe) const;
+    // Get the next left-hand (CW) QuarterEdge associated with the same undirected original edge.
+    // This is rot, but the other way.
+    QuarterEdgeIndex Tor(QuarterEdgeIndex qe) const;
 
-    // // Get the previous right-hand (CCW) QuarterEdge with the same origin.
-    // // i.e. Get the next left-hand (CW) QuarterEdge with the same origin.
-    // QuarterEdge* Prev(const QuarterEdge* qe) const;
+    // Get the previous right-hand (CCW) QuarterEdge with the same origin.
+    // i.e. Get the next left-hand (CW) QuarterEdge with the same origin.
+    QuarterEdgeIndex Prev(QuarterEdgeIndex qe) const;
 
-    // // Get the next quarter edge that rotates around the same triangle (CCW), in the CCW
-    // direction. QuarterEdge* Lnext(const QuarterEdge* qe) const;
+    // Get the next quarter edge that rotates around the same triangle (CCW), in the CCW direction.
+    QuarterEdgeIndex Lnext(QuarterEdgeIndex qe) const;
 
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.
@@ -140,13 +167,14 @@ class DelaunayMesh {
     // // Whether the given vertex is one of the boundary vertices.
     // // (The first three in vertices_)
     // bool IsBoundaryVertex(const common::Vec2f* v) const;
-    // bool IsBoundaryVertex(const VertexData& vertex_data) const;
-    // bool IsBoundaryVertex(const VertexData* const& vertex_data) const;
+    bool IsBoundaryVertex(const VertexData& vertex_data) const;
 
   private:
     // Private mutable getters
     VertexData& Get(VertexIndex i) { return vertices_[i.i]; }
     QuarterEdge& Get(QuarterEdgeIndex i) { return quarter_edges_[i.i]; }
+    const VertexData& Get(VertexIndex i) const { return vertices_[i.i]; }
+    const QuarterEdge& Get(QuarterEdgeIndex i) const { return quarter_edges_[i.i]; }
 
     // Get the index of the next free vertex or quarter edge, retrieving it from the alive list
     // if there are any available, and otherwise appending a new QuarterEdge to the list.
@@ -173,9 +201,9 @@ class DelaunayMesh {
     // A utility function used to join quarter edges
     void Splice(QuarterEdgeIndex a, QuarterEdgeIndex b);
 
-    // // A utility method for flipping an edge within a quadrilateral.
-    // // Should only be called if the bounding quad is convex.
-    // void FlipEdge(QuarterEdge* qe);
+    // A utility method for flipping an edge within a quadrilateral.
+    // Should only be called if the bounding quad is convex.
+    void FlipEdgeImpl(QuarterEdgeIndex qe);
 
     // The maximum radius that a point can be from the origin
     float bounding_radius_;
