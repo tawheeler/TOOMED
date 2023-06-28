@@ -43,64 +43,59 @@ DelaunayMesh::DelaunayMesh(float bounding_radius, float min_dist_to_vertex,
 // ------------------------------------------------------------------------------------------------
 DelaunayMesh::~DelaunayMesh() {}
 
-// //
 // ------------------------------------------------------------------------------------------------
-// void DelaunayMesh::Clear() {
-//     vertices_.clear();
-//     quarter_edges_.clear();
-// }
+void DelaunayMesh::Clear() {
+    // Move all vertices to the free list
+    while (IsValid(i_vertex_alive_last_)) {
+        FreeVertex(i_vertex_alive_last_);
+    }
+    n_vertices_ = 0;  // should not be necessary
 
-// //
+    // Move all quarter edges to the free list
+    while (IsValid(i_qe_alive_last_)) {
+        FreeQuarterEdge(i_qe_alive_last_);
+    }
+    n_quarter_edges_ = 0;  // should not be necessary
+}
+
 // ------------------------------------------------------------------------------------------------
-// bool DelaunayMesh::LoadFromData(const u8* data) {
-//     // Reset the mesh
-//     Clear();
+bool DelaunayMesh::LoadFromData(const u8* data) {
+    // Reset the mesh
+    Clear();
 
-//     u32 offset = 0;
-//     u32 n_vertices = *(u32*)(data + offset);
-//     offset += sizeof(u32);
+    u32 offset = 0;
+    u32 n_vertices = *(u32*)(data + offset);
+    offset += sizeof(u32);
 
-//     u32 n_quarter_edges = *(u32*)(data + offset);
-//     offset += sizeof(u32);
+    u32 n_quarter_edges = *(u32*)(data + offset);
+    offset += sizeof(u32);
 
-//     // Load the vertices
-//     vertices_.reserve(n_vertices);
-//     for (u32 i = 0; i < n_vertices; i++) {
-//         VertexData* vertex_data = new VertexData();
+    // Load the vertices
+    for (u32 i = 0; i < n_vertices; i++) {
+        VertexData& vertex_data = Get(LivenVertex());
+        vertex_data.v = *(common::Vec2f*)(data + offset);
+        offset += sizeof(common::Vec2f);
+    }
 
-//         vertex_data->index = i;
-//         vertex_data->vertex = *(common::Vec2f*)(data + offset);
-//         offset += sizeof(common::Vec2f);
+    // Load the quarter edges
+    for (u32 i = 0; i < n_quarter_edges; i++) {
+        QuarterEdge& qe = Get(LivenQuarterEdge());
+        u32 vertex_index = *(u32*)(data + offset);
+        if (vertex_index != std::numeric_limits<u32>::max()) {
+            qe.i_vertex = {vertex_index};
+        } else {
+            qe.i_vertex = {kInvalidIndex};
+        }
 
-//         vertices_.push_back(vertex_data);
-//     }
+        offset += sizeof(u32);
+        qe.i_nxt = quarter_edges_[*(u32*)(data + offset)].i_self;
+        offset += sizeof(u32);
+        qe.i_rot = quarter_edges_[*(u32*)(data + offset)].i_self;
+        offset += sizeof(u32);
+    }
 
-//     // Load the quarter edges
-//     quarter_edges_.reserve(n_quarter_edges);
-//     for (u32 i = 0; i < n_quarter_edges; i++) {
-//         QuarterEdge* qe = new QuarterEdge();
-//         qe->index = i;
-//         quarter_edges_.emplace_back(qe);
-//     }
-//     for (u32 i = 0; i < n_quarter_edges; i++) {
-//         QuarterEdge* qe = quarter_edges_[i];
-
-//         u32 vertex_index = *(u32*)(data + offset);
-//         if (vertex_index != std::numeric_limits<u32>::max()) {
-//             qe->vertex = vertices_[vertex_index];
-//         } else {
-//             qe->vertex = nullptr;
-//         }
-
-//         offset += sizeof(u32);
-//         qe->next = quarter_edges_[*(u32*)(data + offset)];
-//         offset += sizeof(u32);
-//         qe->rot = quarter_edges_[*(u32*)(data + offset)];
-//         offset += sizeof(u32);
-//     }
-
-//     return true;
-// }
+    return true;
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -144,7 +139,7 @@ QuarterEdgeIndex DelaunayMesh::Sym(QuarterEdgeIndex qe) const {
 // }
 
 // ------------------------------------------------------------------------------------------------
-VertexIndex DelaunayMesh::AddVertex(float x, float y) {
+VertexIndex DelaunayMesh::LivenVertex() {
     VertexIndex i_vertex = {kInvalidIndex};
     if (IsValid(i_vertex_free_first_)) {
         // Grab the first item off the free list and use that.
@@ -152,7 +147,6 @@ VertexIndex DelaunayMesh::AddVertex(float x, float y) {
 
         VertexData& vertex_data = Get(i_vertex);
         i_vertex_free_first_ = vertex_data.i_next;
-        vertex_data.v = common::Vec2f(x, y);
         vertex_data.i_next = {kInvalidIndex};
         vertex_data.i_prev = i_vertex_alive_last_;
 
@@ -160,7 +154,6 @@ VertexIndex DelaunayMesh::AddVertex(float x, float y) {
         // If there is no first item in the free list, append a new item
         i_vertex = {vertices_.size()};
         VertexData vertex_data = {};
-        vertex_data.v = common::Vec2f(x, y);
         vertex_data.i_self = i_vertex;
         vertex_data.i_next = {kInvalidIndex};
         vertex_data.i_prev = i_vertex_alive_last_;
@@ -182,7 +175,7 @@ VertexIndex DelaunayMesh::AddVertex(float x, float y) {
 }
 
 // ------------------------------------------------------------------------------------------------
-QuarterEdgeIndex DelaunayMesh::PrepareFreeQuarterEdge() {
+QuarterEdgeIndex DelaunayMesh::LivenQuarterEdge() {
     QuarterEdgeIndex i_qe = {kInvalidIndex};
     if (IsValid(i_qe_free_first_)) {
         // Grab the first item off the free list and use that.
@@ -218,12 +211,19 @@ QuarterEdgeIndex DelaunayMesh::PrepareFreeQuarterEdge() {
 }
 
 // ------------------------------------------------------------------------------------------------
+VertexIndex DelaunayMesh::AddVertex(float x, float y) {
+    VertexIndex i_vertex = LivenVertex();
+    Get(i_vertex).v = common::Vec2f(x, y);
+    return i_vertex;
+}
+
+// ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::AddEdge(VertexIndex i_vertex_a, VertexIndex i_vertex_b) {
     // Add them all first, so we avoid issues with memory changing as we push new quarter edges.
-    QuarterEdgeIndex i_ab = PrepareFreeQuarterEdge();
-    QuarterEdgeIndex i_lr = PrepareFreeQuarterEdge();
-    QuarterEdgeIndex i_ba = PrepareFreeQuarterEdge();
-    QuarterEdgeIndex i_rl = PrepareFreeQuarterEdge();
+    QuarterEdgeIndex i_ab = LivenQuarterEdge();
+    QuarterEdgeIndex i_lr = LivenQuarterEdge();
+    QuarterEdgeIndex i_ba = LivenQuarterEdge();
+    QuarterEdgeIndex i_rl = LivenQuarterEdge();
 
     QuarterEdge& qe_ab = Get(i_ab);
     QuarterEdge& qe_lr = Get(i_lr);
@@ -245,6 +245,64 @@ QuarterEdgeIndex DelaunayMesh::AddEdge(VertexIndex i_vertex_a, VertexIndex i_ver
     qe_rl.i_rot = qe_ab.i_self;
 
     return qe_ab.i_self;
+}
+
+// ------------------------------------------------------------------------------------------------
+void DelaunayMesh::FreeVertex(VertexIndex i) {
+    VertexData& data = Get(i);
+
+    // Hook the previous and next alive vertices
+    if (IsValid(data.i_prev)) {
+        Get(data.i_prev).i_next = data.i_next;
+    } else {
+        // This is the first alive item
+        i_vertex_alive_first_ = data.i_next;
+    }
+    if (IsValid(data.i_next)) {
+        Get(data.i_next).i_prev = data.i_prev;
+    } else {
+        // This is the last alive item
+        i_vertex_alive_last_ = data.i_prev;
+    }
+
+    // Now append the vertex into the free list
+    data.i_prev = i_vertex_free_last_;
+    i_vertex_free_last_ = data.i_self;
+    if (IsValid(data.i_prev)) {
+        Get(data.i_prev).i_next = data.i_self;
+    } else {
+        // This is the first free item
+        i_vertex_free_first_ = data.i_self;
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+void DelaunayMesh::FreeQuarterEdge(QuarterEdgeIndex i) {
+    QuarterEdge& qe = Get(i);
+
+    // Hook the previous and next alive vertices
+    if (IsValid(qe.i_prev)) {
+        Get(qe.i_prev).i_next = qe.i_next;
+    } else {
+        // This is the first alive item
+        i_qe_alive_first_ = qe.i_next;
+    }
+    if (IsValid(qe.i_next)) {
+        Get(qe.i_next).i_prev = qe.i_prev;
+    } else {
+        // This is the last alive item
+        i_qe_alive_last_ = qe.i_prev;
+    }
+
+    // Now append the vertex into the free list
+    qe.i_prev = i_qe_free_last_;
+    i_qe_free_last_ = qe.i_self;
+    if (IsValid(qe.i_prev)) {
+        Get(qe.i_prev).i_next = qe.i_self;
+    } else {
+        // This is the first free item
+        i_qe_free_first_ = qe.i_self;
+    }
 }
 
 // ------------------------------------------------------------------------------------------------

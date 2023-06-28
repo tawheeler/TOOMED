@@ -74,8 +74,8 @@ class DelaunayMesh {
     size_t NumQuarterEdges() const { return n_quarter_edges_; }
     size_t NumEdges() const { return n_quarter_edges_ >> 2; }
 
-    // void Clear();
-    // bool LoadFromData(const u8* data);
+    void Clear();
+    bool LoadFromData(const u8* data);
 
     // const common::Vec2f& GetVertex(int i) const { return vertices_.at(i)->vertex; }
     // QuarterEdge* GetQuarterEdge(int i) const { return quarter_edges_.at(i); }
@@ -148,18 +148,24 @@ class DelaunayMesh {
     VertexData& Get(VertexIndex i) { return vertices_[i.i]; }
     QuarterEdge& Get(QuarterEdgeIndex i) { return quarter_edges_[i.i]; }
 
+    // Get the index of the next free vertex or quarter edge, retrieving it from the alive list
+    // if there are any available, and otherwise appending a new QuarterEdge to the list.
+    VertexIndex LivenVertex();
+    QuarterEdgeIndex LivenQuarterEdge();
+
     // Add a new vertex to the mesh, returning the index of the newly added vertex.
     VertexIndex AddVertex(float x, float y);
-
-    // Get the index of the next free quarter edge, retrieving it from the alive list
-    // if there are any available, and otherwise appending a new QuarterEdge to the list.
-    QuarterEdgeIndex PrepareFreeQuarterEdge();
 
     // Add a new edge between the vertices at index a and b.
     // Create the quarter edges associated with the given undirected edge.
     // We always create quarter-edges in groups of four.
     // Returns the index of the quarter-edge from A to B.
     QuarterEdgeIndex AddEdge(VertexIndex a, VertexIndex b);
+
+    // Move the given vertex or quarter edge (which must be in the alive list) into the free list.
+    // We assume it is no longer referenced by any edges.
+    void FreeVertex(VertexIndex i);
+    void FreeQuarterEdge(QuarterEdgeIndex i);
 
     // A utility function used by Splice.
     void SwapNexts(QuarterEdgeIndex a, QuarterEdgeIndex b);
