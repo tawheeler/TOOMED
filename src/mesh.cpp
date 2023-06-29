@@ -313,57 +313,46 @@ void DelaunayMesh::Splice(QuarterEdgeIndex a, QuarterEdgeIndex b) {
     SwapNexts(a, b);
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p,
-//                                                 QuarterEdge* qe_dual) const {
-//     // This should always terminate
-//     constexpr int kMaxIters = 100;
-//     for (int iter = 0; iter < kMaxIters; iter++) {
-//         QuarterEdge* qe_ab = qe_dual->rot;
-//         QuarterEdge* qe_bc = qe_dual->next->rot;
-//         QuarterEdge* qe_ca = qe_dual->next->next->rot;
+QuarterEdgeIndex DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p,
+                                                    QuarterEdgeIndex qe_dual) const {
+    // This should always terminate
+    constexpr int kMaxIters = 1000;
+    for (int iter = 0; iter < kMaxIters; iter++) {
+        const auto [qe_ab, qe_bc, qe_ca] = GetTriangleQuarterEdges(qe_dual);
 
-//         const auto& a = (qe_ab->vertex)->vertex;
-//         const auto& b = (qe_bc->vertex)->vertex;
-//         const auto& c = (qe_ca->vertex)->vertex;
+        const common::Vec2f& a = Get(Get(qe_ab).i_vertex).v;
+        const common::Vec2f& b = Get(Get(qe_bc).i_vertex).v;
+        const common::Vec2f& c = Get(Get(qe_ca).i_vertex).v;
 
-//         if (common::GetRightHandedness(a, b, p) < 0) {
-//             qe_dual = Rot(qe_ab);  // Move across AB
-//         } else if (common::GetRightHandedness(b, c, p) < 0) {
-//             qe_dual = Rot(qe_bc);  // Move across BC
-//         } else if (common::GetRightHandedness(c, a, p) < 0) {
-//             qe_dual = Rot(qe_ca);  // Move across CA
-//         } else {
-//             return qe_dual;
-//         }
-//     }
-//     return qe_dual;
-// }
+        if (common::GetRightHandedness(a, b, p) < 0) {
+            qe_dual = Rot(qe_ab);  // Move across AB
+        } else if (common::GetRightHandedness(b, c, p) < 0) {
+            qe_dual = Rot(qe_bc);  // Move across BC
+        } else if (common::GetRightHandedness(c, a, p) < 0) {
+            qe_dual = Rot(qe_ca);  // Move across CA
+        } else {
+            return qe_dual;
+        }
+    }
+    return qe_dual;
+}
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p) const {
-//     return GetEnclosingTriangle(p, Tor(quarter_edges_.front()));
-// }
+QuarterEdgeIndex DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p) const {
+    return GetEnclosingTriangle(p, Tor(quarter_edges_.front().i_self));
+}
 
-// //
 // ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge1(const QuarterEdge* qe_dual) const {
-//     return qe_dual->rot;
-// }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge2(const QuarterEdge* qe_dual) const {
-//     return qe_dual->next->rot;
-// }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// QuarterEdge* DelaunayMesh::GetTriangleQuarterEdge3(const QuarterEdge* qe_dual) const {
-//     return qe_dual->next->next->rot;
-// }
+std::tuple<QuarterEdgeIndex, QuarterEdgeIndex, QuarterEdgeIndex>
+DelaunayMesh::GetTriangleQuarterEdges(QuarterEdgeIndex qe_dual) const {
+    QuarterEdgeIndex qe_nxt1 = Get(qe_dual).i_nxt;
+    QuarterEdgeIndex qe_nxt2 = Get(qe_nxt1).i_nxt;
+    QuarterEdgeIndex qe_ab = Get(qe_dual).i_rot;
+    QuarterEdgeIndex qe_bc = Get(qe_nxt1).i_rot;
+    QuarterEdgeIndex qe_ca = Get(qe_nxt2).i_rot;
+    return std::make_tuple(qe_ab, qe_bc, qe_ca);
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -667,11 +656,169 @@ QuarterEdgeIndex DelaunayMesh::GetQuarterEdge(VertexIndex a, VertexIndex b) cons
 
 // ------------------------------------------------------------------------------------------------
 DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f& p) {
-    // TODO
     InsertVertexResult result = {};
     result.i_vertex = {kInvalidIndex};
     result.i_qe = {kInvalidIndex};
-    result.category = InsertVertexResultCategory::OUT_OF_BOUNDS;
+
+    // Ensure that the point is within the valid bounds
+    if (common::Norm(p) >= bounding_radius_) {
+        result.category = InsertVertexResultCategory::OUT_OF_BOUNDS;
+        return result;
+    }
+
+    // Get the enclosing triangle
+    QuarterEdgeIndex qe_dual = GetEnclosingTriangle(p);
+    auto [qe_ab, qe_bc, qe_ca] = GetTriangleQuarterEdges(qe_dual);
+
+    // Grab the vertices
+    const common::Vec2f& a = GetVertex(qe_ab);
+    const common::Vec2f& b = GetVertex(qe_bc);
+    const common::Vec2f& c = GetVertex(qe_ca);
+
+    // If we are too close to an existing vertex, do nothing.
+    f32 dist_ap = common::Norm(a - p);
+    f32 dist_bp = common::Norm(b - p);
+    f32 dist_cp = common::Norm(b - p);
+
+    result.i_vertex = Get(qe_ab).i_vertex;
+    f32 min_dist = dist_ap;
+    if (dist_bp < min_dist) {
+        min_dist = dist_bp;
+        result.i_vertex = Get(qe_bc).i_vertex;
+    }
+    if (dist_cp < min_dist) {
+        min_dist = dist_cp;
+        result.i_vertex = Get(qe_ca).i_vertex;
+    }
+
+    if (min_dist < min_dist_to_vertex_) {
+        // We are coincident with an existing vertex.
+        result.category = InsertVertexResultCategory::COINCIDENT;
+        // Returns the index to that vertex.
+        return result;
+    }
+
+    // Add the vertex
+    result.i_vertex = AddVertex(p.x, p.y);
+
+    // Check whether we are (effectively) on an edge or inside a face.
+    float dist_to_ab = common::GetDistanceToLine(p, a, b);
+    float dist_to_bc = common::GetDistanceToLine(p, b, c);
+    float dist_to_ca = common::GetDistanceToLine(p, c, a);
+    if (std::min({dist_to_ab, dist_to_bc, dist_to_ca}) > min_dist_to_edge_) {
+        // Normal case. We are not too close to an edge.
+        result.category = InsertVertexResultCategory::IN_FACE;
+
+        // Add the new edges and splice them in
+        QuarterEdgeIndex ap = AddEdge(Get(qe_ab).i_vertex, result.i_vertex);
+        QuarterEdgeIndex bp = AddEdge(Get(qe_bc).i_vertex, result.i_vertex);
+        QuarterEdgeIndex cp = AddEdge(Get(qe_ca).i_vertex, result.i_vertex);
+
+        Splice(ap, qe_ab);
+        Splice(bp, qe_bc);
+        Splice(cp, qe_ca);
+
+        // TODO: Figure out splice such that we get this desired effect.
+        //       i.e. can we replace these next calls with three calls to splice?
+        QuarterEdgeIndex pa = Sym(ap);
+        QuarterEdgeIndex pb = Sym(bp);
+        QuarterEdgeIndex pc = Sym(cp);
+
+        Get(pa).i_nxt = pb;
+        Get(pb).i_nxt = pc;
+        Get(pc).i_nxt = pa;
+
+        Get(Get(pa).i_rot).i_nxt = Get(cp).i_rot;
+        Get(Get(pb).i_rot).i_nxt = Get(ap).i_rot;
+        Get(Get(pc).i_rot).i_nxt = Get(bp).i_rot;
+
+        // Give back a quarter edge with p as its source.
+        result.i_qe = pa;
+    } else {
+        // We are effectively on an edge.
+        // Identify that edge, and cut it with the new vertex.
+        result.category = InsertVertexResultCategory::ON_EDGE;
+
+        // Let DE be the edge we are on, F be the far vertex qe, and G be the vertex qe across DE
+        // from F.
+        QuarterEdgeIndex qe_dp;
+        QuarterEdgeIndex qe_ef;
+        QuarterEdgeIndex qe_fd;
+        if (dist_to_ab <= dist_to_bc && dist_to_ab <= dist_to_ca) {
+            qe_dp = qe_ab;
+            qe_ef = qe_bc;
+            qe_fd = qe_ca;
+        } else if (dist_to_bc <= dist_to_ab && dist_to_bc <= dist_to_ca) {
+            qe_dp = qe_bc;
+            qe_ef = qe_ca;
+            qe_fd = qe_ab;
+        } else {
+            qe_dp = qe_ca;
+            qe_ef = qe_ab;
+            qe_fd = qe_bc;
+        }
+
+        QuarterEdgeIndex qe_ge = Prev(Sym(Prev(qe_dp)));
+
+        // Our edge may not be the boundary edge
+        int n_boundary_vertices = IsBoundaryVertex(Get(Get(qe_dp).i_vertex)) +
+                                  IsBoundaryVertex(Get(Get(Sym(qe_dp)).i_vertex));
+        if (n_boundary_vertices == 2) {
+            result.category = InsertVertexResultCategory::OUT_OF_BOUNDS;
+            return result;
+        }
+
+        // Grab another quarter edge we will need
+        QuarterEdgeIndex qe_dg = Prev(qe_dp);
+
+        // Reset the things that point to DE
+        Get(qe_dg).i_nxt = Sym(qe_fd);
+        QuarterEdgeIndex qe_ge_tor = Tor(qe_ge);
+        Get(qe_ge_tor).i_nxt = Rot(Sym(qe_ef));
+        Get(qe_ef).i_nxt = Sym(qe_ge);
+        QuarterEdgeIndex qe_fd_tor = Tor(qe_fd);
+        Get(qe_fd_tor).i_nxt = Rot(Sym(qe_dg));
+
+        // Reset DP as a quarter edge, and change it to PD
+        QuarterEdgeIndex qe_pd = Sym(qe_dp);
+        Get(qe_pd).i_vertex = result.i_vertex;
+        Get(qe_pd).i_nxt = qe_pd;
+        Get(Get(qe_pd).i_rot).i_nxt = Rot(qe_dp);
+        Get(qe_dp).i_nxt = qe_dp;
+        Get(Get(qe_dp).i_rot).i_nxt = Rot(qe_pd);
+
+        // Create three new edges EP, FP, and GP
+        QuarterEdgeIndex qe_ep = AddEdge(Get(qe_ef).i_vertex, result.i_vertex);
+        QuarterEdgeIndex qe_fp = AddEdge(Get(qe_fd).i_vertex, result.i_vertex);
+        QuarterEdgeIndex qe_gp = AddEdge(Get(qe_ge).i_vertex, result.i_vertex);
+
+        // Splice them all
+        Splice(qe_dp, qe_dg);
+        Splice(qe_gp, qe_ge);
+        Splice(qe_ep, qe_ef);
+        Splice(qe_fp, qe_fd);
+
+        // TODO: Figure out splice such that we get this desired effect.
+        //       i.e. can we replace these next calls with three calls to splice?
+        qe_pd = Sym(qe_dp);
+        QuarterEdgeIndex qe_pe = Sym(qe_ep);
+        QuarterEdgeIndex qe_pf = Sym(qe_fp);
+        QuarterEdgeIndex qe_pg = Sym(qe_gp);
+
+        Get(qe_pd).i_nxt = Sym(qe_gp);
+        Get(qe_pe).i_nxt = Sym(qe_fp);
+        Get(qe_pf).i_nxt = Sym(qe_dp);
+        Get(qe_pg).i_nxt = Sym(qe_ep);
+
+        Get(Rot(qe_pd)).i_nxt = Rot(qe_fp);
+        Get(Rot(qe_pe)).i_nxt = Rot(qe_gp);
+        Get(Rot(qe_pf)).i_nxt = Rot(qe_ep);
+        Get(Rot(qe_pg)).i_nxt = Rot(qe_dp);
+
+        // Give back a quarter edge with p as its source that points along the split edge.
+        result.i_qe = qe_pd;
+    }
+
     return result;
 }
 

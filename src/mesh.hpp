@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <limits>
+#include <tuple>
 #include <vector>
 
 #include "geometry_utils.hpp"
@@ -84,6 +85,9 @@ class DelaunayMesh {
     bool LoadFromData(const u8* data);
 
     const common::Vec2f& GetVertex(VertexIndex i) const { return vertices_[i.i].v; }
+    const common::Vec2f& GetVertex(QuarterEdgeIndex i) const {
+        return GetVertex(quarter_edges_[i.i].i_vertex);
+    }
     const QuarterEdge& GetQuarterEdge(QuarterEdgeIndex i) const { return quarter_edges_[i.i]; }
 
     // Get the quarter edge pointing from i to j, if it exists.
@@ -105,9 +109,9 @@ class DelaunayMesh {
     //       Return the index of the new vertex and an index of a quarter edge with this vertex as
     //       its source that points along the split edge.
     //    3. The new vertex is coincident with an existing vertex.
-    //       Return invalid indices.
-    //    4. The new vertex lies outside the bounding triange.
-    //       Return invalid indices.
+    //       Return the index of the vertex we are coincident with.
+    //    4. The new vertex lies outside the bounding circle (which lies inside the bounding
+    //       triangle). Return invalid indices.
     enum class InsertVertexResultCategory { IN_FACE, ON_EDGE, COINCIDENT, OUT_OF_BOUNDS };
     struct InsertVertexResult {
         VertexIndex i_vertex;
@@ -149,15 +153,13 @@ class DelaunayMesh {
 
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.
-    // QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p, QuarterEdge* qe_ab) const;
-    // QuarterEdge* GetEnclosingTriangle(const common::Vec2f& p) const;
+    QuarterEdgeIndex GetEnclosingTriangle(const common::Vec2f& p, QuarterEdgeIndex qe_dual) const;
+    QuarterEdgeIndex GetEnclosingTriangle(const common::Vec2f& p) const;
 
-    // // Given a dual quarter edge, return the quarter edge originating at the given vertex on
-    // that
-    // // face, pointed in a right-hand orientation.
-    // QuarterEdge* GetTriangleQuarterEdge1(const QuarterEdge* qe_dual) const;
-    // QuarterEdge* GetTriangleQuarterEdge2(const QuarterEdge* qe_dual) const;
-    // QuarterEdge* GetTriangleQuarterEdge3(const QuarterEdge* qe_dual) const;
+    // Given a dual quarter edge, return the quarter edge originating at the given vertex on that
+    // face, pointed in a right-hand orientation.
+    std::tuple<QuarterEdgeIndex, QuarterEdgeIndex, QuarterEdgeIndex> GetTriangleQuarterEdges(
+        QuarterEdgeIndex qe_dual) const;
 
     // // Given a dual quarter edge, return the first vertex on that face.
     // const common::Vec2f& GetTriangleVertex1(const QuarterEdge* qe_dual) const;
