@@ -157,9 +157,9 @@ int main() {
                     mouse_is_pressed = false;
 
                     if (core::IsValid(selected_vertex_index)) {
-                        //     // Check for a selected vertex near the released mouse position
-                        //     std::optional<usize> released_vertex_index =
-                        //         map.FindVertexNearPosition(mouse_pos, qe_mouse_face);
+                        // Check for a selected vertex near the released mouse position
+                        // core::VertexIndex released_vertex_index =
+                        //     map.FindVertexNearPosition(mouse_pos, qe_mouse_face);
                         //     if (released_vertex_index.has_value() &&
                         //         released_vertex_index != selected_vertex_index) {
                         //         // Join those edges
@@ -252,19 +252,23 @@ int main() {
             // Render the mesh
             const core::DelaunayMesh& mesh = map.GetMesh();
 
-            SDL_SetRenderDrawColor(renderer, 0xFF, 0x48, 0xCF, 0xFF);
-
             core::QuarterEdgeIndex qe = mesh.GetFirstQuarterEdgeIndex();
             while (core::IsValid(qe)) {
-                if (mesh.IsPrimal(qe) && !mesh.IsBoundaryVertex(mesh.GetQuarterEdge(qe).i_vertex)) {
+                if (mesh.IsPrimal(qe)) {
                     // Get its opposite side.
                     core::QuarterEdgeIndex qe_sym = mesh.Sym(qe);
 
                     const core::VertexData& a = mesh.GetVertexData(qe);
                     const core::VertexData& b = mesh.GetVertexData(qe_sym);
-                    if (a.i_self > b.i_self &&
-                        !mesh.IsBoundaryVertex(
-                            mesh.GetQuarterEdge(qe_sym).i_vertex)) {  // Avoid rendering edges twice
+                    if (a.i_self > b.i_self) {  // Avoid rendering edges twice
+
+                        // Set the color
+                        if (mesh.IsConstrained(qe)) {
+                            SDL_SetRenderDrawColor(renderer, 0xAA, 0xAA, 0xCF, 0xFF);
+                        } else {
+                            SDL_SetRenderDrawColor(renderer, 0xFF, 0x48, 0xCF, 0xFF);
+                        }
+
                         auto a_cam = GlobalToCamera(a.v, camera_pos, camera_zoom);
                         auto b_cam = GlobalToCamera(b.v, camera_pos, camera_zoom);
                         SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
@@ -297,32 +301,36 @@ int main() {
         //     }
         // }
 
-        // {  // Render all vertices
+        {  // Render all vertices
+            const core::DelaunayMesh& mesh = map.GetMesh();
 
-        //     SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
+            SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
+            core::VertexIndex i_vertex = mesh.GetFirstVertexIndex();
+            while (core::IsValid(i_vertex)) {
+                auto v_cam = GlobalToCamera(mesh.GetVertex(i_vertex), camera_pos, camera_zoom);
 
-        //     for (const auto& v : map.GetVertices()) {
-        //         auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
+                SDL_Rect rect;
 
-        //         SDL_Rect rect;
+                // Outline with darker color
+                SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+                rect.x = (int)(v_cam.x - 2);
+                rect.y = (int)(v_cam.y - 2);
+                rect.h = 5;
+                rect.w = 5;
+                SDL_RenderFillRect(renderer, &rect);
 
-        //         // Outline with darker color
-        //         SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
-        //         rect.x = (int)(v_cam.x - 2);
-        //         rect.y = (int)(v_cam.y - 2);
-        //         rect.h = 5;
-        //         rect.w = 5;
-        //         SDL_RenderFillRect(renderer, &rect);
+                // Fill with lighter color
+                SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
+                rect.x = (int)(v_cam.x - 1);
+                rect.y = (int)(v_cam.y - 1);
+                rect.h = 3;
+                rect.w = 3;
+                SDL_RenderFillRect(renderer, &rect);
 
-        //         // Fill with lighter color
-        //         SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
-        //         rect.x = (int)(v_cam.x - 1);
-        //         rect.y = (int)(v_cam.y - 1);
-        //         rect.h = 3;
-        //         rect.w = 3;
-        //         SDL_RenderFillRect(renderer, &rect);
-        //     }
-        // }
+                // Get the next one
+                i_vertex = mesh.GetNext(i_vertex);
+            }
+        }
 
         // if (selected_edge_index) {
         //     // Render our selected edge
@@ -345,40 +353,41 @@ int main() {
         //                        (int)(d_cam.y));
         // }
 
-        // if (selected_vertex_index) {
-        //     // Render our selected vertex
-        //     const auto& v = map.GetVertices()[*selected_vertex_index];
-        //     auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
+        if (core::IsValid(selected_vertex_index)) {
+            // Render our selected vertex
+            const core::DelaunayMesh& mesh = map.GetMesh();
+            const auto& v = mesh.GetVertex(selected_vertex_index);
+            auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
 
-        //     SDL_Rect rect;
+            SDL_Rect rect;
 
-        //     // Outline with darker color
-        //     SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
-        //     rect.x = (int)(v_cam.x - 3);
-        //     rect.y = (int)(v_cam.y - 3);
-        //     rect.h = 7;
-        //     rect.w = 7;
-        //     SDL_RenderFillRect(renderer, &rect);
+            // Outline with darker color
+            SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+            rect.x = (int)(v_cam.x - 3);
+            rect.y = (int)(v_cam.y - 3);
+            rect.h = 7;
+            rect.w = 7;
+            SDL_RenderFillRect(renderer, &rect);
 
-        //     // Fill with lighter color
-        //     if (mouse_is_pressed) {
-        //         SDL_SetRenderDrawColor(renderer, 0xFF, 0xA0, 0xA0, 0xFF);
-        //     } else {
-        //         SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-        //     }
-        //     rect.x = (int)(v_cam.x - 2);
-        //     rect.y = (int)(v_cam.y - 2);
-        //     rect.h = 5;
-        //     rect.w = 5;
-        //     SDL_RenderFillRect(renderer, &rect);
+            // Fill with lighter color
+            if (mouse_is_pressed) {
+                SDL_SetRenderDrawColor(renderer, 0xFF, 0xA0, 0xA0, 0xFF);
+            } else {
+                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+            }
+            rect.x = (int)(v_cam.x - 2);
+            rect.y = (int)(v_cam.y - 2);
+            rect.h = 5;
+            rect.w = 5;
+            SDL_RenderFillRect(renderer, &rect);
 
-        //     if (mouse_is_pressed) {
-        //         // Render a line to the mouse position.
-        //         auto b_cam = GlobalToCamera(mouse_pos, camera_pos, camera_zoom);
-        //         SDL_RenderDrawLine(renderer, (int)(v_cam.x), (int)(v_cam.y), (int)(b_cam.x),
-        //                            (int)(b_cam.y));
-        //     }
-        // }
+            if (mouse_is_pressed) {
+                // Render a line to the mouse position.
+                auto b_cam = GlobalToCamera(mouse_pos, camera_pos, camera_zoom);
+                SDL_RenderDrawLine(renderer, (int)(v_cam.x), (int)(v_cam.y), (int)(b_cam.x),
+                                   (int)(b_cam.y));
+            }
+        }
 
         // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor
         // refresh rate. (30Hz)

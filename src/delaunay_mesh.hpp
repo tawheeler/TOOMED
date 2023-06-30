@@ -42,6 +42,9 @@ struct VertexData {
     VertexIndex i_prev;  // Index of the previous alive/free VertexData (typemax(size_t) if none)
 };
 
+// Whether the given quarter edge is part of a constrained edge, which means we will not flip it.
+constexpr u32 QE_FLAG_CONSTRAINED = 1;
+
 // A quarter edge represents a directed edge in a QuadEdgeTree.
 // Each undirected edge in the graph A <-> B with face L on the left of A->B and face R on the
 // right of A->B has four quarter edges:
@@ -50,8 +53,10 @@ struct VertexData {
 // If this quarter edge is dual (i.e., represents a face), then ivertex is set to
 // typemax(size_t).
 struct QuarterEdge {
-    VertexIndex i_vertex;     // Non-null if this is a quarter edge originating at a vertex
-                              // Set to typemax(size_t) if free or dual
+    VertexIndex i_vertex;  // Non-null if this is a quarter edge originating at a vertex
+                           // Set to typemax(size_t) if free or dual
+    u32 flags;
+
     QuarterEdgeIndex i_nxt;   // The next right-hand (CCW) QuarterEdge with the same origin
     QuarterEdgeIndex i_rot;   // The next right-hand (CCW) QuarterEdge associated with the same
                               // undirected original edge.
@@ -121,9 +126,17 @@ class DelaunayMesh {
     // A primal edge connects two vertices.
     bool IsPrimal(QuarterEdgeIndex i) const;
 
+    // Whether the given quarter edge is constrained.
+    bool IsConstrained(QuarterEdgeIndex i) const;
+
     // // Returns true if an edge from i to j exists.
     // // Note that the current implementation loops over all quarter edges.
     // bool HasEdge(int i, int j) const;
+
+    // Set the given edge to be constrained. Note that qe can be primal or dual.
+    // This prevents this edge from being flipped in the future.
+    void ConstrainEdge(QuarterEdgeIndex i);
+    void UnconstrainEdge(QuarterEdgeIndex i);
 
     // Insert a new vertex into our mesh, returning an index to the new vertex.
     // There are several cases:
@@ -147,16 +160,8 @@ class DelaunayMesh {
     };
     InsertVertexResult InsertVertex(const common::Vec2f& p);
 
-    // // Insert a new vertex into our mesh, and update the mesh to continue to be a Delaunay
-    // // triangularization. Returns the index of the added vertex if a new point was added, and
-    // // kInvalidIndex instead. (If the new point is coincident with an existing point or the
-    // boundary
-    // // edge, no new point is added.)
-    // int AddDelaunayVertex(const common::Vec2f& p);
-
-    // // Enforce an edge between the ith and jth vertices.
-    // // Returns true if this operation was successful.
-    // bool ConstrainEdge(int i, int j);
+    // Update the mesh to continue to be a Delaunay triangularization, subject to edge constraints.
+    void EnforceLocallyDelaunay(VertexIndex i_vertex);
 
     // Get the next right-hand (CCW) QuarterEdge with the same origin.
     QuarterEdgeIndex Next(QuarterEdgeIndex qe) const;
@@ -187,11 +192,6 @@ class DelaunayMesh {
     // face, pointed in a right-hand orientation.
     std::tuple<QuarterEdgeIndex, QuarterEdgeIndex, QuarterEdgeIndex> GetTriangleQuarterEdges(
         QuarterEdgeIndex qe_dual) const;
-
-    // // Given a dual quarter edge, return the first vertex on that face.
-    // const common::Vec2f& GetTriangleVertex1(const QuarterEdge* qe_dual) const;
-    // const common::Vec2f& GetTriangleVertex2(const QuarterEdge* qe_dual) const;
-    // const common::Vec2f& GetTriangleVertex3(const QuarterEdge* qe_dual) const;
 
     // Whether the given vertex is one of the boundary vertices.
     // (The first three in vertices_)

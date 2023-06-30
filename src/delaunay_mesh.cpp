@@ -176,6 +176,7 @@ QuarterEdgeIndex DelaunayMesh::LivenQuarterEdge() {
 
         QuarterEdge& qe = Get(i_qe);
         i_qe_free_first_ = qe.i_next;
+        qe.flags = 0;
         qe.i_next = {kInvalidIndex};
         qe.i_prev = i_qe_alive_last_;
 
@@ -352,24 +353,6 @@ DelaunayMesh::GetTriangleQuarterEdges(QuarterEdgeIndex qe_dual) const {
     return std::make_tuple(qe_ab, qe_bc, qe_ca);
 }
 
-// //
-// ------------------------------------------------------------------------------------------------
-// const common::Vec2f& DelaunayMesh::GetTriangleVertex1(const QuarterEdge* qe_dual) const {
-//     return GetTriangleQuarterEdge1(qe_dual)->vertex->vertex;
-// }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// const common::Vec2f& DelaunayMesh::GetTriangleVertex2(const QuarterEdge* qe_dual) const {
-//     return GetTriangleQuarterEdge2(qe_dual)->vertex->vertex;
-// }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// const common::Vec2f& DelaunayMesh::GetTriangleVertex3(const QuarterEdge* qe_dual) const {
-//     return GetTriangleQuarterEdge3(qe_dual)->vertex->vertex;
-// }
-
 // ------------------------------------------------------------------------------------------------
 void DelaunayMesh::FlipEdgeImpl(QuarterEdgeIndex qe) {
     QuarterEdgeIndex qe_sym = Sym(qe);
@@ -385,234 +368,75 @@ void DelaunayMesh::FlipEdgeImpl(QuarterEdgeIndex qe) {
     Get(qe_sym).i_vertex = Get(Sym(qe_b)).i_vertex;
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// int DelaunayMesh::AddDelaunayVertex(const common::Vec2f& p) {
-//     // Ensure that the triangle is within bounds
-//     if (common::Norm(p) >= bounding_radius_) {
-//         return kInvalidIndex;
-//     }
+void DelaunayMesh::EnforceLocallyDelaunay(VertexIndex i_vertex) {
+    // Walk around the outer edges and flip any edges that are not locally delaunay.
+    // We can check an edge by seeing if the opposite vertex is within the inscribed
+    // circle of the inner vertex + edge vertices.
 
-//     // Get the enclosing triangle
-//     QuarterEdge* qe_dual = GetEnclosingTriangle(p);
-//     QuarterEdge* qe_ab = qe_dual->rot;
-//     QuarterEdge* qe_bc = qe_dual->next->rot;
-//     QuarterEdge* qe_ca = qe_dual->next->next->rot;
+    // CONTINUE HERE
+    //     // We start at pa and rotate around it to get all edges that we have to check.
+    //     // We need to walk the outer edges until we get back to pa.
+    //     // Each outer edge is given by next(mesh, sym(mesh, qe))
 
-//     // Grab the vertices
-//     const common::Vec2f& a = qe_ab->vertex->vertex;
-//     const common::Vec2f& b = qe_bc->vertex->vertex;
-//     const common::Vec2f& c = qe_ca->vertex->vertex;
+    //     QuarterEdge* qe = qe_start;
+    //     bool done = false;
+    //     while (!done) {
+    //         QuarterEdge* qe_outer_edge = Sym(qe)->next;
 
-//     // If we are too close to an existing vertex, do nothing.
-//     if (std::min({common::Norm(a - p), common::Norm(b - p), common::Norm(c - p)}) <
-//         min_dist_to_vertex_) {
-//         // Return an already existing vertex
-//         // common::Vec2f* v = nullptr;
-//         // if (common::Norm(a - p) < min_dist_to_vertex_) {
-//         //     v = qe_ab->vertex;
-//         // } else if (common::Norm(b - p) < min_dist_to_vertex_) {
-//         //     v = qe_bc->vertex;
-//         // } else {
-//         //     v = qe_ca->vertex;
-//         // }
+    //         // Advance
+    //         qe = qe->next;
+    //         done = qe == qe_start;
 
-//         // for (int i = 0; i < (int)NumVertices(); i++) {
-//         //     if (vertices_[i] == v) {
-//         //         return i;
-//         //     }
-//         // }
+    //         // Only consider the edge if it is not a bounding edge
+    //         VertexData* src_ptr = qe_outer_edge->vertex;
+    //         VertexData* dst_ptr = Sym(qe_outer_edge)->vertex;
+    //         int num_boundary_vertices = IsBoundaryVertex(src_ptr) +
+    //         IsBoundaryVertex(dst_ptr); if (num_boundary_vertices == 2) {  // one edge being
+    //         on the boundary is okay
+    //             continue;
+    //         }
 
-//         return kInvalidIndex;
-//     }
+    //         // Check the edge from qe_outer_edge to sym(qe_outer_edge)
+    //         const common::Vec2f& src = src_ptr->vertex;
+    //         const common::Vec2f& dst = dst_ptr->vertex;
 
-//     // Add the vertex
-//     VertexData* p_ptr = AddVertex(p.x, p.y);
+    //         // Get the far vertex across the dividing edge
+    //         VertexData* far_ptr = Sym(qe_outer_edge->next)->vertex;
+    //         const common::Vec2f& far = far_ptr->vertex;
 
-//     // Check whether we are (effectively) on an edge.
-//     // If we are, we delete the existing edge and add four instead.
-//     float dist_to_ab = common::GetDistanceToLine(p, a, b);
-//     float dist_to_bc = common::GetDistanceToLine(p, b, c);
-//     float dist_to_ca = common::GetDistanceToLine(p, c, a);
-//     QuarterEdge* qe_start = nullptr;
-//     if (std::min({dist_to_ab, dist_to_bc, dist_to_ca}) > min_dist_to_edge_) {
-//         // Normal case. We are not too close to an edge.
+    //         // If the edge contains a boundary vertex, don't flip it if it would produce an
+    //         inside-out
+    //         // triangle.
+    //         if (num_boundary_vertices == 1) {
+    //             if (common::GetTriangleContainment(dst, far, p, src) >= 0 ||
+    //                 common::GetTriangleContainment(dst, far, src, p) >= 0 ||
+    //                 common::GetTriangleContainment(src, far, dst, p) >= 0 ||
+    //                 common::GetTriangleContainment(src, far, p, dst) >= 0) {
+    //                 continue;
+    //             }
+    //         }
 
-//         // Add the new edges and splice them in
-//         QuarterEdge* ap = AddEdge(qe_ab->vertex, p_ptr);
-//         QuarterEdge* bp = AddEdge(qe_bc->vertex, p_ptr);
-//         QuarterEdge* cp = AddEdge(qe_ca->vertex, p_ptr);
+    //         if (common::GetCircleContainment(p, src, dst, far) > 0 ||
+    //             common::GetCircleContainment(far, p, dst, src) > 0) {
+    //             // Either p is inside the circle passing through src, dst, and far, or
+    //             //  far is inside the circle passing through p, src, and dst.
+    //             // We have to flip the edge.
+    //             FlipEdge(qe_outer_edge);
 
-//         Splice(ap, qe_ab);
-//         Splice(bp, qe_bc);
-//         Splice(cp, qe_ca);
+    //             // We flipped the edge, so qe_outer_edge has to be traversed again.
+    //             // Back it up.
+    //             qe = Prev(qe);
+    //             if (qe != qe_start) {
+    //                 qe = Prev(qe);
+    //             }
+    //             done = false;
+    //         }
+    //     }
 
-//         // TODO: Figure out splice such that we get this desired effect.
-//         //       i.e. can we replace these next calls with three calls to splice?
-//         QuarterEdge* pa = Sym(ap);
-//         QuarterEdge* pb = Sym(bp);
-//         QuarterEdge* pc = Sym(cp);
-
-//         pa->next = bp->rot->rot;  // sym(bp)
-//         pb->next = cp->rot->rot;  // sym(bc)
-//         pc->next = ap->rot->rot;  // sym(ap)
-
-//         pa->rot->next = cp->rot;
-//         pb->rot->next = ap->rot;
-//         pc->rot->next = bp->rot;
-
-//         // Set our start quarter edge
-//         qe_start = pa;
-//     } else {
-//         // We are effectively on an edge.
-//         // Identify that edge, and cut it with the new vertex.
-
-//         // Let DE be the edge we are on, F be the far vertex qe, and G be the vertex qe across DE
-//         // from F.
-//         QuarterEdge* qe_dp = nullptr;
-//         QuarterEdge* qe_ef = nullptr;
-//         QuarterEdge* qe_fd = nullptr;
-//         if (dist_to_ab < min_dist_to_edge_) {
-//             qe_dp = qe_ab;
-//             qe_ef = qe_bc;
-//             qe_fd = qe_ca;
-//         } else if (dist_to_bc < min_dist_to_edge_) {
-//             qe_dp = qe_bc;
-//             qe_ef = qe_ca;
-//             qe_fd = qe_ab;
-//         } else {
-//             qe_dp = qe_ca;
-//             qe_ef = qe_ab;
-//             qe_fd = qe_bc;
-//         }
-//         QuarterEdge* qe_ge = Prev(Sym(Prev(qe_dp)));
-
-//         // Our edge may not be the boundary edge
-//         int num_boundary_vertices =
-//             IsBoundaryVertex(qe_dp->vertex) + IsBoundaryVertex(Sym(qe_dp)->vertex);
-//         if (num_boundary_vertices == 2) {
-//             return kInvalidIndex;
-//         }
-
-//         // Grab another quarter edge we will need
-//         QuarterEdge* qe_dg = Prev(qe_dp);
-
-//         // Reset the things that point to DE
-//         qe_dg->next = Rot(qe_fd)->rot;  // sym(fd)
-//         QuarterEdge* qe_ge_tor = Tor(qe_ge);
-//         qe_ge_tor->next = Sym(qe_ef)->rot;
-//         qe_ef->next = Rot(qe_ge)->rot;  // sym(ge)
-//         QuarterEdge* qe_fd_tor = Tor(qe_fd);
-//         qe_fd_tor->next = Sym(qe_dg)->rot;
-
-//         // Reset DP as a quarter edge, and change it to DP
-//         QuarterEdge* qe_pd = Sym(qe_dp);
-//         qe_pd->vertex = p_ptr;
-//         {
-//             qe_pd->next = qe_pd;
-//             qe_pd->rot->next = qe_dp->rot;
-//             qe_dp->next = qe_dp;
-//             qe_dp->rot->next = qe_pd->rot;
-//         }
-
-//         // Create three new edges EP, FP, and F->P
-//         QuarterEdge* qe_ep = AddEdge(qe_ef->vertex, p_ptr);
-//         QuarterEdge* qe_fp = AddEdge(qe_fd->vertex, p_ptr);
-//         QuarterEdge* qe_gp = AddEdge(qe_ge->vertex, p_ptr);
-
-//         // Splice them all correctly
-//         Splice(qe_dp, qe_dg);
-//         Splice(qe_gp, qe_ge);
-//         Splice(qe_ep, qe_ef);
-//         Splice(qe_fp, qe_fd);
-
-//         // TODO: Figure out splice such that we get this desired effect.
-//         //       i.e. can we replace these next calls with three calls to splice?
-//         qe_pd = Sym(qe_dp);
-//         QuarterEdge* qe_pe = Sym(qe_ep);
-//         QuarterEdge* qe_pf = Sym(qe_fp);
-//         QuarterEdge* qe_pg = Sym(qe_gp);
-
-//         qe_pd->next = Rot(qe_gp)->rot;  // sym(gp)
-//         qe_pe->next = Rot(qe_fp)->rot;  // sym(fp)
-//         qe_pf->next = Rot(qe_dp)->rot;  // sym(dp)
-//         qe_pg->next = Rot(qe_ep)->rot;  // sym(ep)
-
-//         Rot(qe_pd)->next = qe_fp->rot;
-//         Rot(qe_pe)->next = qe_gp->rot;
-//         Rot(qe_pf)->next = qe_ep->rot;
-//         Rot(qe_pg)->next = qe_dp->rot;
-
-//         // Set our start quarter edge
-//         qe_start = qe_pd;
-//     }
-
-//     // Check if we are locally Delaunay.
-//     // Walk around the outer edges and flip any edges that are not locally delaunay.
-//     // We can check an edge by seeing if the opposite vertex is within the inscribed circle
-//     // of the inner vertex + edge vertices.
-
-//     // We start at pa and rotate around it to get all edges that we have to check.
-//     // We need to walk the outer edges until we get back to pa.
-//     // Each outer edge is given by next(mesh, sym(mesh, qe))
-
-//     QuarterEdge* qe = qe_start;
-//     bool done = false;
-//     while (!done) {
-//         QuarterEdge* qe_outer_edge = Sym(qe)->next;
-
-//         // Advance
-//         qe = qe->next;
-//         done = qe == qe_start;
-
-//         // Only consider the edge if it is not a bounding edge
-//         VertexData* src_ptr = qe_outer_edge->vertex;
-//         VertexData* dst_ptr = Sym(qe_outer_edge)->vertex;
-//         int num_boundary_vertices = IsBoundaryVertex(src_ptr) + IsBoundaryVertex(dst_ptr);
-//         if (num_boundary_vertices == 2) {  // one edge being on the boundary is okay
-//             continue;
-//         }
-
-//         // Check the edge from qe_outer_edge to sym(qe_outer_edge)
-//         const common::Vec2f& src = src_ptr->vertex;
-//         const common::Vec2f& dst = dst_ptr->vertex;
-
-//         // Get the far vertex across the dividing edge
-//         VertexData* far_ptr = Sym(qe_outer_edge->next)->vertex;
-//         const common::Vec2f& far = far_ptr->vertex;
-
-//         // If the edge contains a boundary vertex, don't flip it if it would produce an
-//         inside-out
-//         // triangle.
-//         if (num_boundary_vertices == 1) {
-//             if (common::GetTriangleContainment(dst, far, p, src) >= 0 ||
-//                 common::GetTriangleContainment(dst, far, src, p) >= 0 ||
-//                 common::GetTriangleContainment(src, far, dst, p) >= 0 ||
-//                 common::GetTriangleContainment(src, far, p, dst) >= 0) {
-//                 continue;
-//             }
-//         }
-
-//         if (common::GetCircleContainment(p, src, dst, far) > 0 ||
-//             common::GetCircleContainment(far, p, dst, src) > 0) {
-//             // Either p is inside the circle passing through src, dst, and far, or
-//             //  far is inside the circle passing through p, src, and dst.
-//             // We have to flip the edge.
-//             FlipEdge(qe_outer_edge);
-
-//             // We flipped the edge, so qe_outer_edge has to be traversed again.
-//             // Back it up.
-//             qe = Prev(qe);
-//             if (qe != qe_start) {
-//                 qe = Prev(qe);
-//             }
-//             done = false;
-//         }
-//     }
-
-//     // Return the index of the newly added vertex
-//     return vertices_.size() - 1;
-// }
+    //     // Return the index of the newly added vertex
+    //     return vertices_.size() - 1;
+}
 
 // ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::GetQuarterEdge(VertexIndex a, VertexIndex b) const {
@@ -652,6 +476,32 @@ bool DelaunayMesh::IsDual(QuarterEdgeIndex i) const {
 bool DelaunayMesh::IsPrimal(QuarterEdgeIndex i) const {
     const QuarterEdge& qe = GetQuarterEdge(i);
     return IsPrimalEdge(qe);
+}
+
+// ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::IsConstrained(QuarterEdgeIndex i) const {
+    const QuarterEdge& qe = GetQuarterEdge(i);
+    return (qe.flags & QE_FLAG_CONSTRAINED) > 0;
+}
+
+// ------------------------------------------------------------------------------------------------
+void DelaunayMesh::ConstrainEdge(QuarterEdgeIndex i) {
+    QuarterEdge& qe = Get(i);
+    qe.flags |= QE_FLAG_CONSTRAINED;
+    for (int i = 0; i < 3; i++) {
+        qe = Get(qe.i_rot);
+        qe.flags |= QE_FLAG_CONSTRAINED;
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+void DelaunayMesh::UnconstrainEdge(QuarterEdgeIndex i) {
+    QuarterEdge& qe = Get(i);
+    qe.flags &= ~QE_FLAG_CONSTRAINED;
+    for (int i = 0; i < 3; i++) {
+        qe = Get(qe.i_rot);
+        qe.flags &= ~QE_FLAG_CONSTRAINED;
+    }
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -764,8 +614,8 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
         // Identify that edge, and cut it with the new vertex.
         result.category = InsertVertexResultCategory::ON_EDGE;
 
-        // Let DE be the edge we are on, F be the far vertex qe, and G be the vertex qe across DE
-        // from F.
+        // Let DE be the edge we are on, F be the far vertex qe, and G be the vertex qe across
+        // DE from F.
         QuarterEdgeIndex qe_dp;
         QuarterEdgeIndex qe_ef;
         QuarterEdgeIndex qe_fd;
@@ -900,7 +750,8 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
 
 //         // qe_a will then have a CCW triangle ACD.
 //         // If the far side of the triangle is B (ACD == ADB), then we are done.
-//         // Otherwise, D is on the other side of AB, so CD intersects AB, and we need to see if we
+//         // Otherwise, D is on the other side of AB, so CD intersects AB, and we need to see
+//         if we
 //         // can flip CD.
 //         QuarterEdge* qe_dual =
 //             Tor(qe_a);  // The dual quarter edge that starts inside ACD and points across AC.
@@ -922,8 +773,8 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
 //                 QuarterEdge* qe_cd = qe_dual->next->rot;
 //                 FlipEdge(qe_cd);
 //             } else {
-//                 // TODO: Handle this case. We need to progress past C and try the next triangle
-//                 that
+//                 // TODO: Handle this case. We need to progress past C and try the next
+//                 triangle that
 //                 //       could overlap.
 //                 return false;
 //             }

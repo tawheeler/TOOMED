@@ -60,6 +60,10 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
     // TODO: Handle solid triangle info based on how the vertex was inserted.
     // TODO: Probably want to automatically enforce Delaunay-ness.
 
+    if (IsValid(result.i_vertex)) {
+        mesh_.EnforceLocallyDelaunay(result.i_vertex);
+    }
+
     return result.i_vertex;
 }
 
