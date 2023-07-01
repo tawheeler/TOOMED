@@ -420,87 +420,34 @@ VertexIndex GameMap::FindVertexNearPosition(const common::Vec2f& pos, QuarterEdg
     return selected_vertex_index;
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// std::optional<usize> GameMap::FindEdgeNearPosition(const common::Vec2f& pos,
-//                                                    core::QuarterEdge* qe_face,
-//                                                    f32 tolerance) const {
-//     if (mesh_ && qe_face != nullptr) {
-//         // We assume the given quarter edge is in the mesh.
-//         return FindEdgeNearPosition(mesh_.get(), pos, qe_face, tolerance);
-//     }
+QuarterEdgeIndex GameMap::FindEdgeNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
+                                               f32 tolerance) const {
+    const auto [qe_ab, qe_bc, qe_ca] = mesh_.GetTriangleQuarterEdges(qe_dual);
+    const common::Vec2f& a = mesh_.GetVertex(qe_ab);
+    const common::Vec2f& b = mesh_.GetVertex(qe_bc);
+    const common::Vec2f& c = mesh_.GetVertex(qe_ca);
 
-//     // Otherwise, fall back on iteration.
-//     // Note that we cannot distinguish between directions.
-//     std::optional<usize> closest_edge_index = std::nullopt;
-//     f32 closest_dist = tolerance;
-//     for (usize i = 0; i < side_infos_.size(); i++) {
-//         const auto& side_info = side_infos_[i];
-//         const common::Vec2f& a = vertices_[side_info.a_ind];
-//         const common::Vec2f& b = vertices_[side_info.b_ind];
-//         f32 dist = common::GetDistanceToLineSegment(pos, a, b);
-//         if (dist < closest_dist) {
-//             closest_dist = dist;
-//             closest_edge_index = i;
-//         }
-//     }
-//     return closest_edge_index;
-// }
+    f32 dist_ab = common::GetDistanceToLine(pos, a, b);
+    f32 dist_bc = common::GetDistanceToLine(pos, b, c);
+    f32 dist_ca = common::GetDistanceToLine(pos, c, a);
 
-// //
-// ------------------------------------------------------------------------------------------------
-// std::optional<usize> GameMap::FindEdgeNearPosition(core::DelaunayMesh* mesh,
-//                                                    const common::Vec2f& pos,
-//                                                    core::QuarterEdge* qe_face,
-//                                                    f32 tolerance) const {
-//     core::QuarterEdge* qe_a = mesh->GetTriangleQuarterEdge1(qe_face);
-//     core::QuarterEdge* qe_b = mesh->GetTriangleQuarterEdge2(qe_face);
-//     core::QuarterEdge* qe_c = mesh->GetTriangleQuarterEdge3(qe_face);
-//     const common::Vec2f& a = qe_a->vertex->vertex;
-//     const common::Vec2f& b = qe_b->vertex->vertex;
-//     const common::Vec2f& c = qe_c->vertex->vertex;
+    QuarterEdgeIndex qe_selected = {core::kInvalidIndex};
+    f32 min_distance = tolerance;
+    if (dist_ab < min_distance) {
+        qe_selected = qe_ab;
+        min_distance = dist_ab;
+    }
+    if (dist_bc < min_distance) {
+        qe_selected = qe_bc;
+        min_distance = dist_bc;
+    }
+    if (dist_ca < min_distance) {
+        qe_selected = qe_ca;
+        min_distance = dist_ca;
+    }
 
-//     f32 dist_ab = common::GetDistanceToLine(pos, a, b);
-//     f32 dist_bc = common::GetDistanceToLine(pos, b, c);
-//     f32 dist_ca = common::GetDistanceToLine(pos, c, a);
-
-//     usize selected_a_ind = core::kInvalidIndex;
-//     usize selected_b_ind = core::kInvalidIndex;
-//     f32 min_distance = tolerance;
-//     if (dist_ab < min_distance) {
-//         selected_a_ind = qe_a->vertex->index;
-//         selected_b_ind = qe_b->vertex->index;
-//         min_distance = dist_ab;
-//     }
-//     if (dist_bc < min_distance) {
-//         selected_a_ind = qe_b->vertex->index;
-//         selected_b_ind = qe_c->vertex->index;
-//         min_distance = dist_bc;
-//     }
-//     if (dist_ca < min_distance) {
-//         selected_a_ind = qe_c->vertex->index;
-//         selected_b_ind = qe_a->vertex->index;
-//         min_distance = dist_ca;
-//     }
-//     if (min_distance >= tolerance) {
-//         return std::nullopt;
-//     }
-
-//     // Convert from mesh vertex indices to map vertex indices.
-//     selected_a_ind = core::MeshVertexIndexToMapVertexIndex(selected_a_ind);
-//     selected_b_ind = core::MeshVertexIndexToMapVertexIndex(selected_b_ind);
-
-//     // We have selected an edge in the mesh, but it may not correspond to an edge in the game map
-//     // (i.e., side info). Check our existing edges and pick the best one. Note that we should
-//     check
-//     // a->b first, and if we don't find that, check b->a. This makes it possible to select a
-//     // particular side based on where the mouse cursor is.
-//     if (HasEdge(selected_a_ind, selected_b_ind)) {
-//         return GetEdgeIndex(selected_a_ind, selected_b_ind);
-//     } else if (HasEdge(selected_b_ind, selected_a_ind)) {
-//         return GetEdgeIndex(selected_b_ind, selected_a_ind);
-//     }
-//     return std::nullopt;
-// }
+    return qe_selected;
+}
 
 }  // namespace core

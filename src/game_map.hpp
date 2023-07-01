@@ -74,15 +74,9 @@ class GameMap {
     VertexIndex FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
                                        f32 tolerance = 0.3) const;
 
-    // // Finds an edge near the given position, if there is one.
-    // // If there is a mesh, use the provided dual quarter edge representing the face containing
-    // pos
-    // // to more quickly locate the vertex. Otherwise, fall back to slow and simple iteration over
-    // all
-    // // edges.
-    // std::optional<usize> FindEdgeNearPosition(const common::Vec2f& pos, core::QuarterEdge*
-    // qe_face,
-    //                                           f32 tolerance = 0.2) const;
+    // Finds an edge near the given position, if there is one.
+    QuarterEdgeIndex FindEdgeNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
+                                          f32 tolerance = 0.2) const;
 
   private:
     // AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
@@ -91,11 +85,6 @@ class GameMap {
     // bool LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
     //                       const core::AssetsExporter& exporter);
     // bool LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter);
-
-    // // FindEdgeNearPosition when a mesh is present. // The given quarter edge must be in the
-    // mesh. std::optional<usize> FindEdgeNearPosition(core::DelaunayMesh* mesh, const
-    // common::Vec2f& pos,
-    //                                           core::QuarterEdge* qe_face, f32 tolerance) const;
 
     // // All of the map-related side information.
     // // If we have side information for an edge A -> B, then that edge must end up in the mesh.

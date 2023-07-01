@@ -493,22 +493,20 @@ bool DelaunayMesh::IsConstrained(QuarterEdgeIndex i) const {
 }
 
 // ------------------------------------------------------------------------------------------------
-void DelaunayMesh::ConstrainEdge(QuarterEdgeIndex i) {
-    QuarterEdge& qe = Get(i);
-    qe.flags |= QE_FLAG_CONSTRAINED;
+void DelaunayMesh::ConstrainEdge(QuarterEdgeIndex qe) {
+    Get(qe).flags |= QE_FLAG_CONSTRAINED;
     for (int i = 0; i < 3; i++) {
-        qe = Get(qe.i_rot);
-        qe.flags |= QE_FLAG_CONSTRAINED;
+        qe = Rot(qe);
+        Get(qe).flags |= QE_FLAG_CONSTRAINED;
     }
 }
 
 // ------------------------------------------------------------------------------------------------
-void DelaunayMesh::UnconstrainEdge(QuarterEdgeIndex i) {
-    QuarterEdge& qe = Get(i);
-    qe.flags &= ~QE_FLAG_CONSTRAINED;
+void DelaunayMesh::UnconstrainEdge(QuarterEdgeIndex qe) {
+    Get(qe).flags &= ~QE_FLAG_CONSTRAINED;
     for (int i = 0; i < 3; i++) {
-        qe = Get(qe.i_rot);
-        qe.flags &= ~QE_FLAG_CONSTRAINED;
+        qe = Rot(qe);
+        Get(qe).flags &= ~QE_FLAG_CONSTRAINED;
     }
 }
 

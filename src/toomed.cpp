@@ -36,6 +36,17 @@ common::Vec2f CameraToGlobal(const common::Vec2f& c, const common::Vec2f& camera
     return g_offset / camera_zoom + camera_pos;
 }
 
+void SetColor(SDL_Renderer* renderer, u32 rgba) {
+    u8 a = rgba & 0xFF;
+    rgba >>= 8;
+    u8 b = rgba & 0xFF;
+    rgba >>= 8;
+    u8 g = rgba & 0xFF;
+    rgba >>= 8;
+    u8 r = rgba & 0xFF;
+    SDL_SetRenderDrawColor(renderer, r, g, b, a);
+}
+
 // void ImportGameData(core::GameMap* map) {
 //     std::cout << "--------------------------------------" << std::endl;
 //     std::cout << "Importing game data" << std::endl;
@@ -110,7 +121,7 @@ int main() {
     common::Vec2f mouse_click_pos = {0.0, 0.0};
     common::Vec2f camera_pos_at_mouse_click = {0.0, 0.0};
     core::VertexIndex selected_vertex_index = {core::kInvalidIndex};
-    core::VertexIndex selected_edge_index = {core::kInvalidIndex};
+    core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
 
     bool continue_running = true;
@@ -143,13 +154,13 @@ int main() {
                     selected_vertex_index =
                         map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
 
-                    // // Check for a selected edge near the current mouse position if we did not
-                    // // select a vertex
-                    // selected_edge_index = std::nullopt;
-                    // if (!selected_vertex_index) {
-                    //     selected_edge_index =
-                    //         map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
-                    // }
+                    // Check for a selected edge near the current mouse position if we did not
+                    // select a vertex
+                    selected_edge_index = {core::kInvalidIndex};
+                    if (!IsValid(selected_vertex_index)) {
+                        selected_edge_index =
+                            map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                    }
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP) {
                 if (mouse_is_pressed) {
@@ -212,9 +223,22 @@ int main() {
             }
         }
 
+        u32 color_white = 0xFFFFFFFF;
+        u32 color_background = 0x414141FF;
+        u32 color_qe_constrained = 0xAAAACFFF;
+        u32 color_qe_normal = 0xFF48CFFF;
+        u32 color_vertex = 0x909090FF;
+        u32 color_vertex_outline = 0x414141FF;
+        u32 color_active = 0xFFA0A0FF;
+
         // Clear screen
-        SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+        SetColor(renderer, color_background);
         SDL_RenderClear(renderer);
+
+        // {
+        //     // Draw major vertical lines
+        //     SDL_SetRenderDrawColor(renderer, 0x61, 0x61, 0x61, 0xFF);
+        // }
 
         if (core::IsValid(qe_mouse_face)) {
             const core::DelaunayMesh& mesh = map.GetMesh();
@@ -264,9 +288,9 @@ int main() {
 
                         // Set the color
                         if (mesh.IsConstrained(qe)) {
-                            SDL_SetRenderDrawColor(renderer, 0xAA, 0xAA, 0xCF, 0xFF);
+                            SetColor(renderer, color_qe_constrained);
                         } else {
-                            SDL_SetRenderDrawColor(renderer, 0xFF, 0x48, 0xCF, 0xFF);
+                            SetColor(renderer, color_qe_normal);
                         }
 
                         auto a_cam = GlobalToCamera(a.v, camera_pos, camera_zoom);
@@ -304,7 +328,6 @@ int main() {
         {  // Render all vertices
             const core::DelaunayMesh& mesh = map.GetMesh();
 
-            SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
             core::VertexIndex i_vertex = mesh.GetFirstVertexIndex();
             while (core::IsValid(i_vertex)) {
                 auto v_cam = GlobalToCamera(mesh.GetVertex(i_vertex), camera_pos, camera_zoom);
@@ -312,7 +335,7 @@ int main() {
                 SDL_Rect rect;
 
                 // Outline with darker color
-                SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+                SetColor(renderer, color_vertex_outline);
                 rect.x = (int)(v_cam.x - 2);
                 rect.y = (int)(v_cam.y - 2);
                 rect.h = 5;
@@ -320,7 +343,7 @@ int main() {
                 SDL_RenderFillRect(renderer, &rect);
 
                 // Fill with lighter color
-                SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xFF);
+                SetColor(renderer, color_vertex);
                 rect.x = (int)(v_cam.x - 1);
                 rect.y = (int)(v_cam.y - 1);
                 rect.h = 3;
@@ -332,26 +355,27 @@ int main() {
             }
         }
 
-        // if (selected_edge_index) {
-        //     // Render our selected edge
-        //     SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        if (IsValid(selected_edge_index)) {
+            // Render our selected edge
+            SetColor(renderer, color_white);
 
-        //     const auto& side_info = map.GetSideInfos()[selected_edge_index.value()];
-        //     common::Vec2f a = map.GetVertices()[side_info.a_ind];
-        //     common::Vec2f b = map.GetVertices()[side_info.b_ind];
+            const core::DelaunayMesh& mesh = map.GetMesh();
+            common::Vec2f a = mesh.GetVertex(selected_edge_index);
+            common::Vec2f b = mesh.GetVertex(mesh.Sym(selected_edge_index));
 
-        //     auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
-        //     auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
-        //     SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
-        //                        (int)(b_cam.y));
+            auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
+            auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
+            SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
+                               (int)(b_cam.y));
 
-        //     common::Vec2f c = (a + b) / 2.0;
-        //     common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
-        //     auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
-        //     auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
-        //     SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
-        //                        (int)(d_cam.y));
-        // }
+            // Draw a little extra tick mark for directed edges
+            // common::Vec2f c = (a + b) / 2.0;
+            // common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
+            // auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+            // auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
+            // SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
+            //                    (int)(d_cam.y));
+        }
 
         if (core::IsValid(selected_vertex_index)) {
             // Render our selected vertex
@@ -362,7 +386,7 @@ int main() {
             SDL_Rect rect;
 
             // Outline with darker color
-            SDL_SetRenderDrawColor(renderer, 0x41, 0x41, 0x41, 0xFF);
+            SetColor(renderer, color_vertex_outline);
             rect.x = (int)(v_cam.x - 3);
             rect.y = (int)(v_cam.y - 3);
             rect.h = 7;
@@ -371,9 +395,9 @@ int main() {
 
             // Fill with lighter color
             if (mouse_is_pressed) {
-                SDL_SetRenderDrawColor(renderer, 0xFF, 0xA0, 0xA0, 0xFF);
+                SetColor(renderer, color_active);
             } else {
-                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+                SetColor(renderer, color_white);
             }
             rect.x = (int)(v_cam.x - 2);
             rect.y = (int)(v_cam.y - 2);
