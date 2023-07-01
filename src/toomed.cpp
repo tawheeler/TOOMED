@@ -225,20 +225,14 @@ int main() {
 
         u32 color_white = 0xFFFFFFFF;
         u32 color_background = 0x414141FF;
+        u32 color_light_gray = 0x909090FF;
         u32 color_qe_constrained = 0xAAAACFFF;
         u32 color_qe_normal = 0xFF48CFFF;
-        u32 color_vertex = 0x909090FF;
-        u32 color_vertex_outline = 0x414141FF;
         u32 color_active = 0xFFA0A0FF;
 
         // Clear screen
         SetColor(renderer, color_background);
         SDL_RenderClear(renderer);
-
-        // {
-        //     // Draw major vertical lines
-        //     SDL_SetRenderDrawColor(renderer, 0x61, 0x61, 0x61, 0xFF);
-        // }
 
         if (core::IsValid(qe_mouse_face)) {
             const core::DelaunayMesh& mesh = map.GetMesh();
@@ -270,6 +264,52 @@ int main() {
                 SDL_FPoint{0},
             };
             SDL_RenderGeometry(renderer, nullptr, triangle, 3, nullptr, 0);
+        }
+
+        {
+            // @efficiency
+            // Draw major vertical lines
+            SetColor(renderer, 0x202020FF);
+
+            f32 major_line_spacing = 1.0;
+
+            f32 x_global = camera_pos.x - fmod(camera_pos.x, major_line_spacing);
+            f32 x_camera =
+                GlobalToCamera(common::Vec2f(x_global, camera_pos.y), camera_pos, camera_zoom).x;
+            while (x_camera > 0.0) {
+                x_global -= major_line_spacing;
+                x_camera =
+                    GlobalToCamera(common::Vec2f(x_global, camera_pos.y), camera_pos, camera_zoom)
+                        .x;
+            }
+            while (x_camera < SCREEN_SIZE_X) {
+                x_global += major_line_spacing;
+                x_camera =
+                    GlobalToCamera(common::Vec2f(x_global, camera_pos.y), camera_pos, camera_zoom)
+                        .x;
+
+                SDL_RenderDrawLine(renderer, (int)(x_camera), (int)(0), (int)(x_camera),
+                                   (int)(SCREEN_SIZE_Y));
+            }
+
+            f32 y_global = camera_pos.y - fmod(camera_pos.y, major_line_spacing);
+            f32 y_camera =
+                GlobalToCamera(common::Vec2f(camera_pos.x, y_global), camera_pos, camera_zoom).y;
+            while (y_camera > 0.0) {
+                y_global += major_line_spacing;
+                y_camera =
+                    GlobalToCamera(common::Vec2f(camera_pos.x, y_global), camera_pos, camera_zoom)
+                        .y;
+            }
+            while (y_camera < SCREEN_SIZE_Y) {
+                y_global -= major_line_spacing;
+                y_camera =
+                    GlobalToCamera(common::Vec2f(camera_pos.x, y_global), camera_pos, camera_zoom)
+                        .y;
+
+                SDL_RenderDrawLine(renderer, (int)(0), (int)(y_camera), (int)(SCREEN_SIZE_X),
+                                   (int)(y_camera));
+            }
         }
 
         {
@@ -335,7 +375,7 @@ int main() {
                 SDL_Rect rect;
 
                 // Outline with darker color
-                SetColor(renderer, color_vertex_outline);
+                SetColor(renderer, color_background);
                 rect.x = (int)(v_cam.x - 2);
                 rect.y = (int)(v_cam.y - 2);
                 rect.h = 5;
@@ -343,7 +383,7 @@ int main() {
                 SDL_RenderFillRect(renderer, &rect);
 
                 // Fill with lighter color
-                SetColor(renderer, color_vertex);
+                SetColor(renderer, color_light_gray);
                 rect.x = (int)(v_cam.x - 1);
                 rect.y = (int)(v_cam.y - 1);
                 rect.h = 3;
@@ -386,7 +426,7 @@ int main() {
             SDL_Rect rect;
 
             // Outline with darker color
-            SetColor(renderer, color_vertex_outline);
+            SetColor(renderer, color_background);
             rect.x = (int)(v_cam.x - 3);
             rect.y = (int)(v_cam.y - 3);
             rect.h = 7;
