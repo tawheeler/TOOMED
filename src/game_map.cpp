@@ -61,7 +61,7 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
     // TODO: Probably want to automatically enforce Delaunay-ness.
 
     if (IsValid(result.i_vertex)) {
-        mesh_.EnforceLocallyDelaunay(result.i_vertex);
+        mesh_.EnforceLocallyDelaunay(result.i_qe);
     }
 
     return result.i_vertex;
@@ -122,7 +122,6 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
 //     const SideInfo& side_info = side_infos_[edge_index];
 //     side_to_info_.erase(std::make_pair(side_info.a_ind, side_info.b_ind));
 
-//     // CONTINUE HERE.
 //     // TODO: Update side-to-info because we need to update all of the indices for things higher
 //     than
 //     // what we removed. AAAAARG.

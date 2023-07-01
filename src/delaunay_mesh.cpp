@@ -118,7 +118,7 @@ QuarterEdgeIndex DelaunayMesh::Prev(QuarterEdgeIndex qe) const {
 
 // ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::Lnext(QuarterEdgeIndex qe) const {
-    return Get(Get(Tor(qe)).i_next).i_rot;
+    return Get(Get(Tor(qe)).i_nxt).i_rot;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -176,6 +176,7 @@ QuarterEdgeIndex DelaunayMesh::LivenQuarterEdge() {
 
         QuarterEdge& qe = Get(i_qe);
         i_qe_free_first_ = qe.i_next;
+        qe.i_vertex = {kInvalidIndex};
         qe.flags = 0;
         qe.i_next = {kInvalidIndex};
         qe.i_prev = i_qe_alive_last_;
@@ -184,6 +185,7 @@ QuarterEdgeIndex DelaunayMesh::LivenQuarterEdge() {
         // If there is no first item in the free list, append a new item
         i_qe = {quarter_edges_.size()};
         QuarterEdge qe = {};
+        qe.i_vertex = {kInvalidIndex};
         qe.i_self = i_qe;
         qe.i_next = {kInvalidIndex};
         qe.i_prev = i_qe_alive_last_;
@@ -369,73 +371,79 @@ void DelaunayMesh::FlipEdgeImpl(QuarterEdgeIndex qe) {
 }
 
 // ------------------------------------------------------------------------------------------------
-void DelaunayMesh::EnforceLocallyDelaunay(VertexIndex i_vertex) {
+void DelaunayMesh::EnforceLocallyDelaunay(QuarterEdgeIndex qe_start) {
+    const common::Vec2f& p = GetVertex(qe_start);
+
     // Walk around the outer edges and flip any edges that are not locally delaunay.
     // We can check an edge by seeing if the opposite vertex is within the inscribed
     // circle of the inner vertex + edge vertices.
 
-    // CONTINUE HERE
-    //     // We start at pa and rotate around it to get all edges that we have to check.
-    //     // We need to walk the outer edges until we get back to pa.
-    //     // Each outer edge is given by next(mesh, sym(mesh, qe))
+    // We start at the given quarter edge, then walk around the polygon surrounding the source
+    // vertex until we have checked all edges and return to the start.
 
-    //     QuarterEdge* qe = qe_start;
-    //     bool done = false;
-    //     while (!done) {
-    //         QuarterEdge* qe_outer_edge = Sym(qe)->next;
+    QuarterEdgeIndex qe_index = qe_start;
+    bool done = false;
+    while (!done) {
+        // Get the quarter edge representing an edge along the perimeter polygon.
+        QuarterEdgeIndex qe_outer_edge = Get(Sym(qe_index)).i_nxt;
 
-    //         // Advance
-    //         qe = qe->next;
-    //         done = qe == qe_start;
+        // Advance
+        qe_index = Next(qe_index);
+        done = qe_index == qe_start;
 
-    //         // Only consider the edge if it is not a bounding edge
-    //         VertexData* src_ptr = qe_outer_edge->vertex;
-    //         VertexData* dst_ptr = Sym(qe_outer_edge)->vertex;
-    //         int num_boundary_vertices = IsBoundaryVertex(src_ptr) +
-    //         IsBoundaryVertex(dst_ptr); if (num_boundary_vertices == 2) {  // one edge being
-    //         on the boundary is okay
-    //             continue;
-    //         }
+        // Do not flip the boundary edge
+        VertexData& src_data = Get(Get(qe_outer_edge).i_vertex);
+        VertexData& dst_data = Get(Get(Sym(qe_outer_edge)).i_vertex);
 
-    //         // Check the edge from qe_outer_edge to sym(qe_outer_edge)
-    //         const common::Vec2f& src = src_ptr->vertex;
-    //         const common::Vec2f& dst = dst_ptr->vertex;
+        int num_boundary_vertices = IsBoundaryVertex(src_data) + IsBoundaryVertex(dst_data);
+        if (num_boundary_vertices == 2) {  // one edge being on the boundary is okay
+            continue;
+        }
 
-    //         // Get the far vertex across the dividing edge
-    //         VertexData* far_ptr = Sym(qe_outer_edge->next)->vertex;
-    //         const common::Vec2f& far = far_ptr->vertex;
+        // Do not flip a constrained edge.
+        if (IsConstrained(qe_outer_edge)) {
+            continue;
+        }
 
-    //         // If the edge contains a boundary vertex, don't flip it if it would produce an
-    //         inside-out
-    //         // triangle.
-    //         if (num_boundary_vertices == 1) {
-    //             if (common::GetTriangleContainment(dst, far, p, src) >= 0 ||
-    //                 common::GetTriangleContainment(dst, far, src, p) >= 0 ||
-    //                 common::GetTriangleContainment(src, far, dst, p) >= 0 ||
-    //                 common::GetTriangleContainment(src, far, p, dst) >= 0) {
-    //                 continue;
-    //             }
-    //         }
+        // Check the edge from qe_outer_edge to sym(qe_outer_edge)
+        const common::Vec2f& src = src_data.v;
+        const common::Vec2f& dst = dst_data.v;
 
-    //         if (common::GetCircleContainment(p, src, dst, far) > 0 ||
-    //             common::GetCircleContainment(far, p, dst, src) > 0) {
-    //             // Either p is inside the circle passing through src, dst, and far, or
-    //             //  far is inside the circle passing through p, src, and dst.
-    //             // We have to flip the edge.
-    //             FlipEdge(qe_outer_edge);
+        // Get the far vertex, across the dividing edge, on the other side of P.
+        VertexData& far_data = Get(Get(Sym(Get(qe_outer_edge).i_nxt)).i_vertex);
 
-    //             // We flipped the edge, so qe_outer_edge has to be traversed again.
-    //             // Back it up.
-    //             qe = Prev(qe);
-    //             if (qe != qe_start) {
-    //                 qe = Prev(qe);
-    //             }
-    //             done = false;
-    //         }
-    //     }
+        const common::Vec2f& far = far_data.v;
 
-    //     // Return the index of the newly added vertex
-    //     return vertices_.size() - 1;
+        // If the edge contains a boundary vertex, don't flip it if it would produce an  inside -
+        // out triangle.
+        if (num_boundary_vertices == 1) {
+            if (common::GetTriangleContainment(dst, far, p, src) >= 0 ||
+                common::GetTriangleContainment(dst, far, src, p) >= 0 ||
+                common::GetTriangleContainment(src, far, dst, p) >= 0 ||
+                common::GetTriangleContainment(src, far, p, dst) >= 0) {
+                continue;
+            }
+        }
+
+        // If we are not locally Delaunay, flip the edge
+        if (common::GetCircleContainment(p, src, dst, far) > 0 ||
+            common::GetCircleContainment(far, p, dst, src) > 0) {
+            // Either p is inside the circle passing through src, dst, and far, or
+            //  far is inside the circle passing through p, src, and dst.
+            // We have to flip the edge.
+            FlipEdgeImpl(qe_outer_edge);
+
+            // We flipped the edge, so qe_outer_edge has to be traversed again.
+            // Back it up.
+            qe_index = Prev(qe_index);
+            if (qe_index != qe_start) {
+                qe_index = Prev(qe_index);
+            } else {
+                qe_start = Prev(qe_index);
+            }
+            done = false;
+        }
+    }
 }
 
 // ------------------------------------------------------------------------------------------------

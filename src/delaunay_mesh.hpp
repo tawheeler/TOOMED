@@ -161,7 +161,9 @@ class DelaunayMesh {
     InsertVertexResult InsertVertex(const common::Vec2f& p);
 
     // Update the mesh to continue to be a Delaunay triangularization, subject to edge constraints.
-    void EnforceLocallyDelaunay(VertexIndex i_vertex);
+    // We pass in a primal quarter edge (originating at the vertex to walk around) at which to start
+    // the enforcement.
+    void EnforceLocallyDelaunay(QuarterEdgeIndex qe_start);
 
     // Get the next right-hand (CCW) QuarterEdge with the same origin.
     QuarterEdgeIndex Next(QuarterEdgeIndex qe) const;
