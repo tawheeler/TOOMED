@@ -47,6 +47,30 @@ void SetColor(SDL_Renderer* renderer, u32 rgba) {
     SDL_SetRenderDrawColor(renderer, r, g, b, a);
 }
 
+void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common::Vec2f& camera_pos,
+                f32 camera_zoom) {
+    SetColor(renderer, rgba);
+
+    f32 line_spacing_camera = line_spacing * camera_zoom;
+    f32 x_global = camera_pos.x - fmod(camera_pos.x, line_spacing);
+    f32 x_camera = SCREEN_SIZE_X / 2 + (x_global - camera_pos.x) * camera_zoom;
+    x_camera = fmod(x_camera, line_spacing_camera);
+    while (x_camera < SCREEN_SIZE_X) {
+        x_camera += line_spacing_camera;
+        SDL_RenderDrawLine(renderer, (int)(x_camera), (int)(0), (int)(x_camera),
+                           (int)(SCREEN_SIZE_Y));
+    }
+
+    f32 y_global = camera_pos.y - fmod(camera_pos.y, line_spacing);
+    f32 y_camera = SCREEN_SIZE_Y / 2 - (y_global - camera_pos.y) * camera_zoom;
+    y_camera = fmod(y_camera, line_spacing_camera);
+    while (y_camera < SCREEN_SIZE_Y) {
+        y_camera += line_spacing_camera;
+        SDL_RenderDrawLine(renderer, (int)(0), (int)(y_camera), (int)(SCREEN_SIZE_X),
+                           (int)(y_camera));
+    }
+}
+
 // void ImportGameData(core::GameMap* map) {
 //     std::cout << "--------------------------------------" << std::endl;
 //     std::cout << "Importing game data" << std::endl;
@@ -268,49 +292,16 @@ int main() {
         }
 
         {
-            // @efficiency
             // Draw major vertical lines
-            SetColor(renderer, color_light_background);
-
             f32 major_line_spacing = 1.0;
+            f32 minor_line_spacing = major_line_spacing / 8.0;
 
-            f32 x_global = camera_pos.x - fmod(camera_pos.x, major_line_spacing);
-            f32 x_camera =
-                GlobalToCamera(common::Vec2f(x_global, camera_pos.y), camera_pos, camera_zoom).x;
-            while (x_camera > 0.0) {
-                x_global -= major_line_spacing;
-                x_camera =
-                    GlobalToCamera(common::Vec2f(x_global, camera_pos.y), camera_pos, camera_zoom)
-                        .x;
-            }
-            while (x_camera < SCREEN_SIZE_X) {
-                x_global += major_line_spacing;
-                x_camera =
-                    GlobalToCamera(common::Vec2f(x_global, camera_pos.y), camera_pos, camera_zoom)
-                        .x;
-
-                SDL_RenderDrawLine(renderer, (int)(x_camera), (int)(0), (int)(x_camera),
-                                   (int)(SCREEN_SIZE_Y));
+            if (camera_zoom > 75.0) {
+                RenderGrid(renderer, 0x404055FF, minor_line_spacing, camera_pos, camera_zoom);
             }
 
-            f32 y_global = camera_pos.y - fmod(camera_pos.y, major_line_spacing);
-            f32 y_camera =
-                GlobalToCamera(common::Vec2f(camera_pos.x, y_global), camera_pos, camera_zoom).y;
-            while (y_camera > 0.0) {
-                y_global += major_line_spacing;
-                y_camera =
-                    GlobalToCamera(common::Vec2f(camera_pos.x, y_global), camera_pos, camera_zoom)
-                        .y;
-            }
-            while (y_camera < SCREEN_SIZE_Y) {
-                y_global -= major_line_spacing;
-                y_camera =
-                    GlobalToCamera(common::Vec2f(camera_pos.x, y_global), camera_pos, camera_zoom)
-                        .y;
-
-                SDL_RenderDrawLine(renderer, (int)(0), (int)(y_camera), (int)(SCREEN_SIZE_X),
-                                   (int)(y_camera));
-            }
+            RenderGrid(renderer, color_light_background, major_line_spacing, camera_pos,
+                       camera_zoom);
         }
 
         {
