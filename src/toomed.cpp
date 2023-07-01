@@ -216,8 +216,9 @@ int main() {
                 }
             } else if (event.type == SDL_MOUSEMOTION) {
                 // Move the mouse
-                mouse_pos = CameraToGlobal(common::Vec2f(event.motion.x, event.motion.y),
-                                           camera_pos, camera_zoom);
+                mouse_pos = CameraToGlobal(
+                    common::Vec2f(event.motion.x, event.motion.y),
+                    mouse_is_pressed ? camera_pos_at_mouse_click : camera_pos, camera_zoom);
                 // Update the mouse face
                 qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos, qe_mouse_face);
 
@@ -225,6 +226,7 @@ int main() {
                 if (mouse_is_pressed && !core::IsValid(selected_vertex_index)) {
                     camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
                 }
+
             } else if (event.type == SDL_KEYDOWN) {
                 if (event.key.keysym.sym == SDLK_e) {
                     // ExportGameData(map); // TODO
