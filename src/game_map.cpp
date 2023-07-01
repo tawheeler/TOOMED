@@ -136,32 +136,10 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
 //     return true;
 // }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// bool GameMap::ConstructMesh() {
-//     // Create an empty mesh with the 3 bounding vertices
-//     mesh_.reset(new core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX,
-//                                        MESH_MIN_DIST_TO_EDGE));
-
-//     // Add all vertices
-//     for (const auto& v : vertices_) {
-//         int new_vertex = mesh_->AddDelaunayVertex(v);
-//         if (new_vertex == core::kInvalidIndex) {
-//             InvalidateMesh();
-//             return false;
-//         }
-//     }
-
-//     // Constrain all edges
-//     for (const auto& side_info : side_infos_) {
-//         if (!mesh_->ConstrainEdge(side_info.a_ind, side_info.b_ind)) {
-//             InvalidateMesh();
-//             return false;
-//         }
-//     }
-
-//     return true;
-// }
+void GameMap::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos) {
+    mesh_.MoveVertexToward(qe_primal, pos);
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -392,8 +370,8 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
 // }
 
 // ------------------------------------------------------------------------------------------------
-VertexIndex GameMap::FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
-                                            f32 tolerance) const {
+QuarterEdgeIndex GameMap::FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
+                                                 f32 tolerance) const {
     const auto [qe_ab, qe_bc, qe_ca] = mesh_.GetTriangleQuarterEdges(qe_dual);
     const common::Vec2f& a = mesh_.GetVertex(qe_ab);
     const common::Vec2f& b = mesh_.GetVertex(qe_bc);
@@ -403,21 +381,21 @@ VertexIndex GameMap::FindVertexNearPosition(const common::Vec2f& pos, QuarterEdg
     f32 dist_b = common::Norm(b - pos);
     f32 dist_c = common::Norm(c - pos);
 
-    VertexIndex selected_vertex_index = {kInvalidIndex};
+    QuarterEdgeIndex selected_index = {kInvalidIndex};
     f32 min_distance = tolerance;
     if (dist_a < min_distance) {
-        selected_vertex_index = mesh_.GetVertexIndex(qe_ab);
+        selected_index = qe_ab;
         min_distance = dist_a;
     }
     if (dist_b < min_distance) {
-        selected_vertex_index = mesh_.GetVertexIndex(qe_bc);
+        selected_index = qe_bc;
         min_distance = dist_b;
     }
     if (dist_c < min_distance) {
-        selected_vertex_index = mesh_.GetVertexIndex(qe_ca);
+        selected_index = qe_ca;
         // min_distance = dist_c;
     }
-    return selected_vertex_index;
+    return selected_index;
 }
 
 // ------------------------------------------------------------------------------------------------

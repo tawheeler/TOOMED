@@ -120,6 +120,26 @@ class DelaunayMesh {
     VertexIndex GetFirstVertexIndex() const { return i_vertex_alive_first_; };
     QuarterEdgeIndex GetFirstQuarterEdgeIndex() const { return i_qe_alive_first_; };
 
+    // Get the next right-hand (CCW) QuarterEdge with the same origin.
+    QuarterEdgeIndex Next(QuarterEdgeIndex qe) const;
+
+    // Get the next right-hand (CCW) QuarterEdge associated with the same undirected original edge.
+    QuarterEdgeIndex Rot(QuarterEdgeIndex qe) const;
+
+    // Get the symmetric QuarterEdge - given QuarterEdge A->B, returns B->A.
+    QuarterEdgeIndex Sym(QuarterEdgeIndex qe) const;
+
+    // Get the next left-hand (CW) QuarterEdge associated with the same undirected original edge.
+    // This is rot, but the other way.
+    QuarterEdgeIndex Tor(QuarterEdgeIndex qe) const;
+
+    // Get the previous right-hand (CCW) QuarterEdge with the same origin.
+    // i.e. Get the next left-hand (CW) QuarterEdge with the same origin.
+    QuarterEdgeIndex Prev(QuarterEdgeIndex qe) const;
+
+    // Get the next quarter edge that rotates around the same triangle (CCW), in the CCW direction.
+    QuarterEdgeIndex Lnext(QuarterEdgeIndex qe) const;
+
     // A dual edge connects two faces.
     bool IsDual(QuarterEdgeIndex i) const;
 
@@ -128,6 +148,11 @@ class DelaunayMesh {
 
     // Whether the given quarter edge is constrained.
     bool IsConstrained(QuarterEdgeIndex i) const;
+
+    // Whether the given vertex is one of the boundary vertices.
+    // (The first three in vertices_)
+    bool IsBoundaryVertex(VertexIndex i_vertex) const;
+    bool IsBoundaryVertex(const VertexData& vertex_data) const;
 
     // // Returns true if an edge from i to j exists.
     // // Note that the current implementation loops over all quarter edges.
@@ -165,26 +190,6 @@ class DelaunayMesh {
     // the enforcement.
     void EnforceLocallyDelaunay(QuarterEdgeIndex qe_start);
 
-    // Get the next right-hand (CCW) QuarterEdge with the same origin.
-    QuarterEdgeIndex Next(QuarterEdgeIndex qe) const;
-
-    // Get the next right-hand (CCW) QuarterEdge associated with the same undirected original edge.
-    QuarterEdgeIndex Rot(QuarterEdgeIndex qe) const;
-
-    // Get the symmetric QuarterEdge - given QuarterEdge A->B, returns B->A.
-    QuarterEdgeIndex Sym(QuarterEdgeIndex qe) const;
-
-    // Get the next left-hand (CW) QuarterEdge associated with the same undirected original edge.
-    // This is rot, but the other way.
-    QuarterEdgeIndex Tor(QuarterEdgeIndex qe) const;
-
-    // Get the previous right-hand (CCW) QuarterEdge with the same origin.
-    // i.e. Get the next left-hand (CW) QuarterEdge with the same origin.
-    QuarterEdgeIndex Prev(QuarterEdgeIndex qe) const;
-
-    // Get the next quarter edge that rotates around the same triangle (CCW), in the CCW direction.
-    QuarterEdgeIndex Lnext(QuarterEdgeIndex qe) const;
-
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.
     QuarterEdgeIndex GetEnclosingTriangle(const common::Vec2f& p, QuarterEdgeIndex qe_dual) const;
@@ -195,10 +200,10 @@ class DelaunayMesh {
     std::tuple<QuarterEdgeIndex, QuarterEdgeIndex, QuarterEdgeIndex> GetTriangleQuarterEdges(
         QuarterEdgeIndex qe_dual) const;
 
-    // Whether the given vertex is one of the boundary vertices.
-    // (The first three in vertices_)
-    bool IsBoundaryVertex(VertexIndex i_vertex) const;
-    bool IsBoundaryVertex(const VertexData& vertex_data) const;
+    // Move the given vertex (as a primal qe) toward pos. The vertex cannot be moved outside of its
+    // surrounding polygon, nor can it be moved closer than min_dist_to_vertex_ to any vertex or
+    // min_dist_to_edge_ to any edge.
+    void MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos);
 
   private:
     // Private mutable getters

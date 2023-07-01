@@ -322,9 +322,9 @@ QuarterEdgeIndex DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p,
     for (int iter = 0; iter < kMaxIters; iter++) {
         const auto [qe_ab, qe_bc, qe_ca] = GetTriangleQuarterEdges(qe_dual);
 
-        const common::Vec2f& a = Get(Get(qe_ab).i_vertex).v;
-        const common::Vec2f& b = Get(Get(qe_bc).i_vertex).v;
-        const common::Vec2f& c = Get(Get(qe_ca).i_vertex).v;
+        const common::Vec2f& a = GetVertex(qe_ab);
+        const common::Vec2f& b = GetVertex(qe_bc);
+        const common::Vec2f& c = GetVertex(qe_ca);
 
         if (common::GetRightHandedness(a, b, p) < 0) {
             qe_dual = Rot(qe_ab);  // Move across AB
@@ -353,6 +353,71 @@ DelaunayMesh::GetTriangleQuarterEdges(QuarterEdgeIndex qe_dual) const {
     QuarterEdgeIndex qe_bc = Get(qe_nxt1).i_rot;
     QuarterEdgeIndex qe_ca = Get(qe_nxt2).i_rot;
     return std::make_tuple(qe_ab, qe_bc, qe_ca);
+}
+
+// ------------------------------------------------------------------------------------------------
+void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos) {
+    // TODO: We can technically move a vertex into a bad place if its surrounding polygon is
+    // non-convex. Need to figure out what the convex feasible set is.
+
+    const f32 eps = 1e-3;  // TODO - better place to define this?
+
+    // Where the point is now
+    const common::Vec2f& a = GetVertex(qe_primal);
+    const common::Vec2f dir = a - pos;
+    if (common::Norm(dir) < eps) {
+        // We do this check to avoid issues with coincident points later on.
+        // No sense doing work if we are already at pos.
+        return;  // no change
+    }
+
+    // Figure out which face we are moving in by rotationg around qe_primal
+    // and finding the first pair where the cone contains pos.
+
+    // The quarter edge across from a
+    QuarterEdgeIndex qe_b = Sym(qe_primal);
+    common::Vec2f b = GetVertex(qe_b);
+
+    // The quarter edge to the right of a->b
+    QuarterEdgeIndex qe_c = Sym(Prev(qe_b));
+    common::Vec2f c = GetVertex(qe_c);
+
+    while (common::GetRightHandedness(a, b, pos) < 0 || common::GetRightHandedness(a, pos, c) < 0) {
+        qe_primal = Next(qe_primal);  // Rotate to the next primal edge
+        qe_b = Sym(qe_primal);
+        b = GetVertex(qe_b);
+        qe_c = Sym(Prev(qe_b));
+        c = GetVertex(qe_c);
+    }
+
+    // We now have a, b, c, where a is the origin and pos lies in the cone between a->b, a->c.
+    // We cannot move a past the edge b->c (and have to stay a bit further back).
+    // So shift b->c to the left by min_dist_to_edge.
+    common::Vec2f shift = common::Rotr(common::Normalize(c - b)) * min_dist_to_edge_;
+    b += shift;
+    c += shift;
+
+    if (common::GetRightHandedness(pos, b, c) <= 0) {
+        // The shifted triangle is no longer right-hand.
+        return;
+    }
+
+    common::LineIntersectionResult result = common::CalcLineIntersection(a, pos, b, c);
+    if (result.intersection != common::Intersection::AT_POINT) {
+        return;  // nothing we can do.
+    }
+
+    // TODO: enforce min_dist_to_vertex
+
+    // Pos's current interpolant is 1.0
+    // Clamp it below the s-interpolant.
+    if (result.s >= 1.0) {
+        // Accept pos
+        Get(Get(qe_primal).i_vertex).v = pos;
+    } else {
+        // Accept the maximum movement
+        Get(Get(qe_primal).i_vertex).v = a + dir * result.s;
+    }
 }
 
 // ------------------------------------------------------------------------------------------------

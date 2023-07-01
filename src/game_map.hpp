@@ -60,8 +60,8 @@ class GameMap {
     // // Remove a directed edge (side_info). This action does not invalidate the mesh.
     // bool RemoveDirectedEdge(usize edge_index);
 
-    // // Attempt to construct the Delaunay mesh.
-    // bool ConstructMesh();
+    // Move the vertex given by the primal quarter edge toward pos, within its surrounding polygon.
+    void MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos);
 
     // // Write the GameMap entries into the exporter.
     // bool Export(core::AssetsExporter* exporter) const;
@@ -69,10 +69,11 @@ class GameMap {
     // // Load the GameMap from the given file. This results the GameMap.
     // bool Import(const core::AssetsExporter& exporter);
 
-    // Finds a vertex (map index) near the given position, if there is one, using the provided dual
-    // quarter edge representing the face containing pos to more quickly locate the vertex.
-    VertexIndex FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
-                                       f32 tolerance = 0.3) const;
+    // Finds a vertex (as a primal quarter edge) near the given position, if there is one, using the
+    // provided dual quarter edge representing the face containing pos to more quickly locate the
+    // vertex.
+    QuarterEdgeIndex FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
+                                            f32 tolerance = 0.3) const;
 
     // Finds an edge near the given position, if there is one.
     QuarterEdgeIndex FindEdgeNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,

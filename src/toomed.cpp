@@ -144,7 +144,7 @@ int main() {
     common::Vec2f mouse_pos = {0.0, 0.0};
     common::Vec2f mouse_click_pos = {0.0, 0.0};
     common::Vec2f camera_pos_at_mouse_click = {0.0, 0.0};
-    core::VertexIndex selected_vertex_index = {core::kInvalidIndex};
+    core::QuarterEdgeIndex selected_vertex_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
 
@@ -222,9 +222,14 @@ int main() {
                 // Update the mouse face
                 qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos, qe_mouse_face);
 
-                // Pan the camera
-                if (mouse_is_pressed && !core::IsValid(selected_vertex_index)) {
-                    camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
+                if (mouse_is_pressed) {
+                    if (core::IsValid(selected_vertex_index)) {
+                        // Move the given vertex
+                        map.MoveVertexToward(selected_vertex_index, mouse_pos);
+                    } else {
+                        // Pan the camera
+                        camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
+                    }
                 }
 
             } else if (event.type == SDL_KEYDOWN) {
