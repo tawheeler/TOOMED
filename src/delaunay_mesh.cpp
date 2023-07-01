@@ -388,6 +388,7 @@ void DelaunayMesh::EnforceLocallyDelaunay(QuarterEdgeIndex qe_start) {
         QuarterEdgeIndex qe_outer_edge = Get(Sym(qe_index)).i_nxt;
 
         // Advance
+        QuarterEdgeIndex qe_index_start_of_iter = qe_index;
         qe_index = Next(qe_index);
         done = qe_index == qe_start;
 
@@ -435,12 +436,7 @@ void DelaunayMesh::EnforceLocallyDelaunay(QuarterEdgeIndex qe_start) {
 
             // We flipped the edge, so qe_outer_edge has to be traversed again.
             // Back it up.
-            qe_index = Prev(qe_index);
-            if (qe_index != qe_start) {
-                qe_index = Prev(qe_index);
-            } else {
-                qe_start = Prev(qe_index);
-            }
+            qe_index = qe_index_start_of_iter;
             done = false;
         }
     }

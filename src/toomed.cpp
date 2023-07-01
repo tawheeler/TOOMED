@@ -225,6 +225,7 @@ int main() {
 
         u32 color_white = 0xFFFFFFFF;
         u32 color_background = 0x414141FF;
+        u32 color_light_background = 0x454545FF;
         u32 color_light_gray = 0x909090FF;
         u32 color_qe_constrained = 0xAAAACFFF;
         u32 color_qe_normal = 0xFF48CFFF;
@@ -269,7 +270,7 @@ int main() {
         {
             // @efficiency
             // Draw major vertical lines
-            SetColor(renderer, 0x202020FF);
+            SetColor(renderer, color_light_background);
 
             f32 major_line_spacing = 1.0;
 
