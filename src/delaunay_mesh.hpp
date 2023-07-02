@@ -83,8 +83,7 @@ bool IsPrimalEdge(const QuarterEdge& qe);
 class DelaunayMesh {
   public:
     // Construct a QuadEdgeMesh that is merely a bounding triangle with the given radius.
-    DelaunayMesh(float bounding_radius, float min_dist_to_vertex = 1e-3,
-                 float min_dist_to_edge = 1e-3);
+    DelaunayMesh(float bounding_radius, float min_dist_to_vertex, float min_dist_to_edge);
     ~DelaunayMesh();
 
     size_t NumVertices() const { return n_vertices_; }

@@ -357,14 +357,11 @@ DelaunayMesh::GetTriangleQuarterEdges(QuarterEdgeIndex qe_dual) const {
 
 // ------------------------------------------------------------------------------------------------
 void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos) {
-    // TODO: We can technically move a vertex into a bad place if its surrounding polygon is
-    // non-convex. Need to figure out what the convex feasible set is.
-
     const f32 eps = 1e-3;  // TODO - better place to define this?
 
     // Where the point is now
     const common::Vec2f& a = GetVertex(qe_primal);
-    const common::Vec2f dir = a - pos;
+    const common::Vec2f dir = pos - a;
     if (common::Norm(dir) < eps) {
         // We do this check to avoid issues with coincident points later on.
         // No sense doing work if we are already at pos.
@@ -390,6 +387,37 @@ void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Ve
         c = GetVertex(qe_c);
     }
 
+    // The polygon enclosing vertex A may not be convex. We do not want to allow shifting A to
+    // anywhere that would cause edges to shift their order. As such, walk around the polygon and
+    // intersect each edge with both AB and AC, clipping them as appropriate.
+    QuarterEdgeIndex qe_start = qe_primal;
+    QuarterEdgeIndex qe = Next(qe_primal);
+    while (qe != qe_start) {
+        QuarterEdgeIndex qe_d = Sym(qe);
+        const common::Vec2f& d = GetVertex(qe_d);
+        QuarterEdgeIndex qe_e = Sym(Prev(qe_d));
+        const common::Vec2f& e = GetVertex(qe_e);
+
+        common::LineIntersectionResult result = common::CalcLineIntersection(a, b, d, e);
+        if (result.intersection == common::Intersection::AT_POINT && result.s > 0.0 &&
+            result.s < 1.0) {
+            // Shorten.
+            b = a + (b - a) * result.s;
+            std::cout << "Shortening b according to " << result.s << std::endl;
+        }
+
+        result = common::CalcLineIntersection(a, c, d, e);
+        if (result.intersection == common::Intersection::AT_POINT && result.s > 0.0 &&
+            result.s < 1.0) {
+            // Shorten.
+            c = a + (c - a) * result.s;
+            std::cout << "Shortening c according to " << result.s << std::endl;
+        }
+
+        // Advance
+        qe = Next(qe);
+    }
+
     // We now have a, b, c, where a is the origin and pos lies in the cone between a->b, a->c.
     // We cannot move a past the edge b->c (and have to stay a bit further back).
     // So shift b->c to the left by min_dist_to_edge.
@@ -397,21 +425,17 @@ void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Ve
     b += shift;
     c += shift;
 
-    if (common::GetRightHandedness(pos, b, c) <= 0) {
-        // The shifted triangle is no longer right-hand.
-        return;
-    }
-
     common::LineIntersectionResult result = common::CalcLineIntersection(a, pos, b, c);
     if (result.intersection != common::Intersection::AT_POINT) {
         return;  // nothing we can do.
     }
 
-    // TODO: enforce min_dist_to_vertex
+    // TODO: enforce min_dist_to_vertex if it is bigger than min_dist_to_edge.
 
-    // Pos's current interpolant is 1.0
-    // Clamp it below the s-interpolant.
-    if (result.s >= 1.0) {
+    // Pos's current interpolant is 1.0; clamp it below the s-interpolant.
+    // If the successor triangle is not right-handed, we do accept movement all the way to
+    // the boundary.
+    if (result.s >= 1.0 && common::GetRightHandedness(pos, b, c) > 0) {
         // Accept pos
         Get(Get(qe_primal).i_vertex).v = pos;
     } else {

@@ -148,6 +148,7 @@ int main() {
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
 
+    bool move_toward_vertex = false;
     bool continue_running = true;
     while (continue_running) {
         SDL_Event event;
@@ -226,6 +227,7 @@ int main() {
                     if (core::IsValid(selected_vertex_index)) {
                         // Move the given vertex
                         map.MoveVertexToward(selected_vertex_index, mouse_pos);
+                        move_toward_vertex = true;
                     } else {
                         // Pan the camera
                         camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
@@ -252,6 +254,10 @@ int main() {
                     }
                 }
             }
+        }
+
+        if (move_toward_vertex && IsValid(selected_vertex_index) && !mouse_is_pressed) {
+            // map.MoveVertexToward(selected_vertex_index, mouse_pos);
         }
 
         u32 color_white = 0xFFFFFFFF;
