@@ -20,6 +20,8 @@ struct VertexIndex {
     bool operator!=(const VertexIndex& rhs) const { return i != rhs.i; }
     bool operator>=(const VertexIndex& rhs) const { return i >= rhs.i; }
     bool operator>(const VertexIndex& rhs) const { return i > rhs.i; }
+    bool operator<=(const VertexIndex& rhs) const { return i <= rhs.i; }
+    bool operator<(const VertexIndex& rhs) const { return i < rhs.i; }
 };
 
 bool IsValid(VertexIndex i);
@@ -31,6 +33,8 @@ struct QuarterEdgeIndex {
     bool operator!=(const QuarterEdgeIndex& rhs) const { return i != rhs.i; }
     bool operator>=(const QuarterEdgeIndex& rhs) const { return i >= rhs.i; }
     bool operator>(const QuarterEdgeIndex& rhs) const { return i > rhs.i; }
+    bool operator<=(const QuarterEdgeIndex& rhs) const { return i <= rhs.i; }
+    bool operator<(const QuarterEdgeIndex& rhs) const { return i < rhs.i; }
 };
 
 bool IsValid(QuarterEdgeIndex i);

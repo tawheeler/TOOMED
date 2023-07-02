@@ -18,12 +18,10 @@ struct ExportedSideInfo {
 GameMap::GameMap() : mesh_(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE) {}
 
 // ------------------------------------------------------------------------------------------------
-// void GameMap::Clear() {
-//     vertices_.clear();
-//     side_infos_.clear();
-//     side_to_info_.clear();
-//     InvalidateMesh();
-// }
+void GameMap::Clear() {
+    mesh_.Clear();
+    side_infos_.clear();
+}
 
 // //
 // ------------------------------------------------------------------------------------------------
@@ -266,108 +264,84 @@ void GameMap::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& 
 //     return true;
 // }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// bool GameMap::LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
-//                                const core::AssetsExporter& exporter) {
-//     const AssetsExporterEntry* entry = exporter.FindEntry(name);
-//     if (entry == nullptr) {
-//         std::cout << "Failed to find entry " << name << std::endl;
-//         return false;
-//     }
+bool GameMap::LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
+                               const core::AssetsExporter& exporter) {
+    const AssetsExporterEntry* entry = exporter.FindEntry(name);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << name << std::endl;
+        return false;
+    }
 
-//     const u8* data = entry->data.data();
-//     return mesh->LoadFromData(data);
-// }
+    const u8* data = entry->data.data();
+    return mesh->LoadFromData(data);
+}
 
-// //
 // ------------------------------------------------------------------------------------------------
-// bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter) {
-//     // We must already have loaded a mesh
-//     if (not mesh_) {
-//         std::cout << "LoadSideInfos called without a valid mesh" << std::endl;
-//         return false;
-//     }
+bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter) {
+    const AssetsExporterEntry* entry = exporter.FindEntry(name);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << name << std::endl;
+        return false;
+    }
 
-//     const AssetsExporterEntry* entry = exporter.FindEntry(name);
-//     if (entry == nullptr) {
-//         std::cout << "Failed to find entry " << name << std::endl;
-//         return false;
-//     }
+    const u8* data = entry->data.data();
+    u32 offset = 0;
 
-//     const u8* data = entry->data.data();
-//     u32 offset = 0;
+    u32 n_side_infos = *(u32*)(data + offset);
+    offset += sizeof(u32);
 
-//     u32 n_side_infos = *(u32*)(data + offset);
-//     offset += sizeof(u32);
+    std::vector<SideInfo> side_infos;
+    side_infos.reserve(n_side_infos);
+    for (u32 i = 0; i < n_side_infos; i++) {
+        ExportedSideInfo exported_side_info = *(ExportedSideInfo*)(data + offset);
+        offset += sizeof(ExportedSideInfo);
 
-//     side_infos_.clear();
-//     side_infos_.reserve(n_side_infos);
-//     for (u32 i = 0; i < n_side_infos; i++) {
-//         ExportedSideInfo exported_side_info = *(ExportedSideInfo*)(data + offset);
-//         offset += sizeof(ExportedSideInfo);
+        SideInfo side_info = {};
+        side_info.flags = exported_side_info.flags;
+        side_info.texture_id = exported_side_info.texture_id;
+        side_info.x_offset = exported_side_info.x_offset;
+        side_info.y_offset = exported_side_info.y_offset;
+        // NOTE: quarter edge index not yet set.
 
-//         SideInfo side_info = {};
-//         side_info.flags = exported_side_info.flags;
-//         side_info.texture_id = exported_side_info.texture_id;
-//         side_info.x_offset = exported_side_info.x_offset;
-//         side_info.y_offset = exported_side_info.y_offset;
-//         // NOTE: a_ind, b_ind not yet set.
+        side_infos.emplace_back(side_info);
+    }
 
-//         side_infos_.emplace_back(side_info);
-//     }
+    // Set source and dest from side to info list and store in map.
+    side_infos_.clear();
+    for (size_t i = 0; i < mesh_.NumQuarterEdges(); i++) {
+        u16 side_info_index = *(u16*)(data + offset);
+        offset += sizeof(u16);
+        if (side_info_index != std::numeric_limits<u16>::max()) {
+            SideInfo& side_info = side_infos[side_info_index];
+            side_info.qe = {i};
+            side_infos_[side_info.qe] = side_info;
+        }
+    }
 
-//     // Set source and dest from side to info list.
-//     for (size_t i = 0; i < mesh_->NumQuarterEdges(); i++) {
-//         u16 side_info_index = *(u16*)(data + offset);
-//         offset += sizeof(u16);
-//         if (side_info_index != std::numeric_limits<u16>::max()) {
-//             SideInfo& side_info = side_infos_[side_info_index];
-//             const QuarterEdge* qe = mesh_->GetQuarterEdge(i);
-//             side_info.a_ind = MeshVertexIndexToMapVertexIndex(qe->vertex->index);
-//             side_info.b_ind = MeshVertexIndexToMapVertexIndex(mesh_->Sym(qe)->vertex->index);
+    return true;
+}
 
-//             // Update side-to-info.
-//             side_to_info_[std::make_pair(side_info.a_ind, side_info.b_ind)] = side_info_index;
-//         }
-//     }
-
-//     return true;
-// }
-
-// //
 // ------------------------------------------------------------------------------------------------
-// bool GameMap::Import(const core::AssetsExporter& exporter) {
-//     // Clear the map
-//     Clear();
+bool GameMap::Import(const core::AssetsExporter& exporter) {
+    // Clear the game map
+    Clear();
 
-//     // First, attempt to load the geometry mesh to get our vertices.
-//     bool success = true;
-//     if (exporter.HasEntry(kAssetEntryGeometryMesh)) {
-//         mesh_.reset(new core::DelaunayMesh(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX,
-//                                            MESH_MIN_DIST_TO_EDGE));
-//         success &= LoadDelaunayMesh(mesh_.get(), kAssetEntryGeometryMesh, exporter);
-//     } else {
-//         success = false;
-//         std::cout << "Failed to load geometry mesh!" << std::endl;
-//     }
+    // First, load the geometry mesh.
+    bool success = true;
+    if (exporter.HasEntry(kAssetEntryGeometryMesh)) {
+        success &= LoadDelaunayMesh(&mesh_, kAssetEntryGeometryMesh, exporter);
+    } else {
+        success = false;
+        std::cout << "Failed to load geometry mesh!" << std::endl;
+    }
 
-//     if (success) {
-//         // Load the vertices from the geometry mesh.
-//         // Note that we skip the first 3 bounding vertices.
-//         vertices_.reserve(mesh_->NumVertices());
-//         for (size_t i_vertex = 3; i_vertex < mesh_->NumVertices(); i_vertex++) {
-//             common::Vec2f vertex = mesh_->GetVertex(i_vertex);
-//             vertices_.emplace_back(vertex);
-//         }
-//     }
+    if (success) {
+        success &= LoadSideInfos(kAssetEntrySideInfos, exporter);
+    }
 
-//     if (success) {
-//         success &= LoadSideInfos(kAssetEntrySideInfos, exporter);
-//     }
-
-//     return success;
-// }
+    return success;
+}
 
 // ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex GameMap::FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,

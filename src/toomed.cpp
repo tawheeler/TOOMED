@@ -71,23 +71,23 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
     }
 }
 
-// void ImportGameData(core::GameMap* map) {
-//     std::cout << "--------------------------------------" << std::endl;
-//     std::cout << "Importing game data" << std::endl;
+void ImportGameData(core::GameMap* map) {
+    std::cout << "--------------------------------------" << std::endl;
+    std::cout << "Importing game data" << std::endl;
 
-//     core::AssetsExporter exporter;
-//     exporter.LoadAssetsFile("../toom/assets/toomed.bin");
-//     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
+    core::AssetsExporter exporter;
+    exporter.LoadAssetsFile("../toom/assets/toomed.bin");
+    std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
-//     bool succeeded = map->Import(exporter);
-//     if (!succeeded) {
-//         std::cout << "Failed to load game map! Clearing possibly corrupted map." << std::endl;
-//         map->Clear();
-//     }
+    bool succeeded = map->Import(exporter);
+    if (!succeeded) {
+        std::cout << "Failed to load game map! Clearing possibly corrupted map." << std::endl;
+        map->Clear();
+    }
 
-//     std::cout << "DONE" << std::endl;
-//     std::cout << "--------------------------------------" << std::endl;
-// }
+    std::cout << "DONE" << std::endl;
+    std::cout << "--------------------------------------" << std::endl;
+}
 
 // void ExportGameData(const core::GameMap& map) {
 //     std::cout << "--------------------------------------" << std::endl;
@@ -238,7 +238,7 @@ int main() {
                 if (event.key.keysym.sym == SDLK_e) {
                     // ExportGameData(map); // TODO
                 } else if (event.key.keysym.sym == SDLK_i) {
-                    // ImportGameData(&map); // TODO
+                    ImportGameData(&map);
                 } else if (event.key.keysym.sym == SDLK_DELETE) {
                     // Delete key pressed!
                     if (core::IsValid(selected_vertex_index)) {
@@ -349,26 +349,28 @@ int main() {
             }
         }
 
-        // {  // Render all side_infos (these are directed)
-        //     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xFF);
+        {  // Render all side_infos (these are directed)
+            SetColor(renderer, color_light_gray);
 
-        //     for (const auto& side_info : map.GetSideInfos()) {
-        //         common::Vec2f a = map.GetVertices()[side_info.a_ind];
-        //         common::Vec2f b = map.GetVertices()[side_info.b_ind];
+            const core::DelaunayMesh& mesh = map.GetMesh();
+            for (const auto& it : map.GetSideInfos()) {
+                core::QuarterEdgeIndex qe = it.second.qe;
+                const common::Vec2f& a = mesh.GetVertex(qe);
+                const common::Vec2f& b = mesh.GetVertex(mesh.Sym(qe));
 
-        //         auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
-        //         auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
-        //         SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
-        //                            (int)(b_cam.y));
+                auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
+                auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
+                SDL_RenderDrawLine(renderer, (int)(a_cam.x), (int)(a_cam.y), (int)(b_cam.x),
+                                   (int)(b_cam.y));
 
-        //         common::Vec2f c = (a + b) / 2.0;
-        //         common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
-        //         auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
-        //         auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
-        //         SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
-        //                            (int)(d_cam.y));
-        //     }
-        // }
+                common::Vec2f c = (a + b) / 2.0;
+                common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
+                auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+                auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
+                SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
+                                   (int)(d_cam.y));
+            }
+        }
 
         {  // Render all vertices
             const core::DelaunayMesh& mesh = map.GetMesh();

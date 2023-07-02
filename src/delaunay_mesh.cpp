@@ -60,8 +60,24 @@ void DelaunayMesh::Clear() {
 
 // ------------------------------------------------------------------------------------------------
 bool DelaunayMesh::LoadFromData(const u8* data) {
-    // Reset the mesh
-    Clear();
+    // Reset the mesh.
+    // Note that we do this rather than call Clear() because
+    // we need the indices in the save file to be the same as the indices in the new mesh.
+    // If we simply call Clear(), then our free/alive list may have a weird ordering.
+
+    vertices_.clear();
+    i_vertex_alive_first_ = {kInvalidIndex};
+    i_vertex_alive_last_ = {kInvalidIndex};
+    i_vertex_free_first_ = {kInvalidIndex};
+    i_vertex_free_last_ = {kInvalidIndex};
+    n_vertices_ = 0;
+
+    quarter_edges_.clear();
+    i_qe_alive_first_ = {kInvalidIndex};
+    i_qe_alive_last_ = {kInvalidIndex};
+    i_qe_free_first_ = {kInvalidIndex};
+    i_qe_free_last_ = {kInvalidIndex};
+    n_quarter_edges_ = 0;
 
     u32 offset = 0;
     u32 n_vertices = *(u32*)(data + offset);
@@ -80,18 +96,22 @@ bool DelaunayMesh::LoadFromData(const u8* data) {
     // Load the quarter edges
     for (u32 i = 0; i < n_quarter_edges; i++) {
         QuarterEdge& qe = Get(LivenQuarterEdge());
+
         u32 vertex_index = *(u32*)(data + offset);
+        offset += sizeof(u32);
         if (vertex_index != std::numeric_limits<u32>::max()) {
             qe.i_vertex = {vertex_index};
         } else {
             qe.i_vertex = {kInvalidIndex};
         }
 
+        u32 nxt = *(u32*)(data + offset);
         offset += sizeof(u32);
-        qe.i_nxt = quarter_edges_[*(u32*)(data + offset)].i_self;
+        qe.i_nxt = {nxt};
+
+        u32 rot = *(u32*)(data + offset);
         offset += sizeof(u32);
-        qe.i_rot = quarter_edges_[*(u32*)(data + offset)].i_self;
-        offset += sizeof(u32);
+        qe.i_rot = {rot};
     }
 
     return true;
@@ -403,7 +423,6 @@ void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Ve
             result.s < 1.0) {
             // Shorten.
             b = a + (b - a) * result.s;
-            std::cout << "Shortening b according to " << result.s << std::endl;
         }
 
         result = common::CalcLineIntersection(a, c, d, e);
@@ -411,7 +430,6 @@ void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Ve
             result.s < 1.0) {
             // Shorten.
             c = a + (c - a) * result.s;
-            std::cout << "Shortening c according to " << result.s << std::endl;
         }
 
         // Advance
@@ -637,14 +655,14 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
     auto [qe_ab, qe_bc, qe_ca] = GetTriangleQuarterEdges(qe_dual);
 
     // Grab the vertices
-    const common::Vec2f& a = GetVertex(qe_ab);
-    const common::Vec2f& b = GetVertex(qe_bc);
-    const common::Vec2f& c = GetVertex(qe_ca);
+    common::Vec2f a = GetVertex(qe_ab);
+    common::Vec2f b = GetVertex(qe_bc);
+    common::Vec2f c = GetVertex(qe_ca);
 
     // If we are too close to an existing vertex, do nothing.
     f32 dist_ap = common::Norm(a - p);
     f32 dist_bp = common::Norm(b - p);
-    f32 dist_cp = common::Norm(b - p);
+    f32 dist_cp = common::Norm(c - p);
 
     result.i_vertex = Get(qe_ab).i_vertex;
     f32 min_dist = dist_ap;

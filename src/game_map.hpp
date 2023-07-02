@@ -36,10 +36,10 @@ class GameMap {
     GameMap();
     ~GameMap() = default;
 
-    // // Empty the game map
-    // void Clear();
+    // Empty the game map
+    void Clear();
 
-    // const std::vector<SideInfo>& GetSideInfos() const { return side_infos_; };
+    const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
 
     // // Whether the given edge exists
     // bool HasEdge(int a_ind, int b_ind) const;
@@ -66,8 +66,8 @@ class GameMap {
     // // Write the GameMap entries into the exporter.
     // bool Export(core::AssetsExporter* exporter) const;
 
-    // // Load the GameMap from the given file. This results the GameMap.
-    // bool Import(const core::AssetsExporter& exporter);
+    // Load the GameMap from the given file. This results the GameMap.
+    bool Import(const core::AssetsExporter& exporter);
 
     // Finds a vertex (as a primal quarter edge) near the given position, if there is one, using the
     // provided dual quarter edge representing the face containing pos to more quickly locate the
@@ -83,20 +83,17 @@ class GameMap {
     // AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
     // AssetsExporterEntry ExportSideInfos(const std::string& name) const;
 
-    // bool LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
-    //                       const core::AssetsExporter& exporter);
-    // bool LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter);
-
-    // // All of the map-related side information.
-    // // If we have side information for an edge A -> B, then that edge must end up in the mesh.
-    // // Edges without side information may exist in the mesh. Such edges are assumed transparent.
-    // std::vector<SideInfo> side_infos_;
-
-    // // Map <a_ind, b_ind> to index in side_infos.
-    // std::map<std::tuple<usize, usize>, usize> side_to_info_;
+    bool LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
+                          const core::AssetsExporter& exporter);
+    bool LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter);
 
     // The map geometry
     core::DelaunayMesh mesh_;
+
+    // All of the map-related side information.
+    // Only primal quarter edges should ever be associated with side_infos.
+    // Any edges that do not have side infos are simply transparent.
+    std::map<QuarterEdgeIndex, SideInfo> side_infos_;
 };
 
 }  // namespace core
