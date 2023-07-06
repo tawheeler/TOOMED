@@ -92,24 +92,24 @@ void ImportGameData(core::GameMap* map) {
     std::cout << "--------------------------------------" << std::endl;
 }
 
-// void ExportGameData(const core::GameMap& map) {
-//     std::cout << "--------------------------------------" << std::endl;
-//     std::cout << "Exporting game data" << std::endl;
+void ExportGameData(const core::GameMap& map) {
+    std::cout << "--------------------------------------" << std::endl;
+    std::cout << "Exporting game data" << std::endl;
 
-//     core::AssetsExporter exporter;
-//     bool succeeded = map.Export(&exporter);
-//     if (!succeeded) {
-//         std::cout << "Failure while exporting game map! Not written to file." << std::endl;
-//         return;
-//     }
+    core::AssetsExporter exporter;
+    bool succeeded = map.Export(&exporter);
+    if (!succeeded) {
+        std::cout << "Failure while exporting game map! Not written to file." << std::endl;
+        return;
+    }
 
-//     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
+    std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
-//     exporter.WriteToFile("../toom/assets/toomed.bin");
+    exporter.WriteToFile("../toom/assets/toomed.bin");
 
-//     std::cout << "DONE" << std::endl;
-//     std::cout << "--------------------------------------" << std::endl;
-// }
+    std::cout << "DONE" << std::endl;
+    std::cout << "--------------------------------------" << std::endl;
+}
 
 int main() {
     SDL_version ver;
@@ -284,7 +284,7 @@ int main() {
 
             } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
                 if (event.key.keysym.sym == SDLK_e) {
-                    // ExportGameData(map); // TODO
+                    ExportGameData(map);
                 } else if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
                 } else if (event.key.keysym.sym == SDLK_DELETE) {

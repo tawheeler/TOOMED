@@ -151,134 +151,143 @@ void GameMap::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& 
 // ------------------------------------------------------------------------------------------------
 bool GameMap::MaybeFlipEdge(QuarterEdgeIndex qe_primal) { return mesh_.MaybeFlipEdge(qe_primal); }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// AssetsExporterEntry GameMap::ExportDelaunayMesh(const std::string& name) const {
-//     AssetsExporterEntry entry;
-//     entry.SetName(name);
+AssetsExporterEntry GameMap::ExportDelaunayMesh(const std::string& name) const {
+    AssetsExporterEntry entry;
+    entry.SetName(name);
 
-//     if (mesh_) {
-//         // Serialize the mesh
-//         std::stringstream buffer;
+    // Serialize the mesh
+    std::stringstream buffer;
 
-//         // Serialize the counts
-//         u32 n_vertices = mesh_->NumVertices();
-//         buffer.write(reinterpret_cast<const char*>(&n_vertices), sizeof(u32));
-//         u32 n_quarter_edges = mesh_->NumQuarterEdges();
-//         buffer.write(reinterpret_cast<const char*>(&n_quarter_edges), sizeof(u32));
+    // Serialize the counts
+    u32 n_vertices = mesh_.NumVertices();
+    buffer.write(reinterpret_cast<const char*>(&n_vertices), sizeof(u32));
+    u32 n_quarter_edges = mesh_.NumQuarterEdges();
+    buffer.write(reinterpret_cast<const char*>(&n_quarter_edges), sizeof(u32));
 
-//         // Serialize the vertices
-//         for (size_t i = 0; i < n_vertices; i++) {
-//             const common::Vec2f& v = mesh_->GetVertex(i);
-//             buffer.write(reinterpret_cast<const char*>(&v.x), sizeof(f32));
-//             buffer.write(reinterpret_cast<const char*>(&v.y), sizeof(f32));
-//         }
+    // Serialize the vertices
 
-//         // Serialize the quarter edges
-//         for (size_t i = 0; i < n_quarter_edges; i++) {
-//             const core::QuarterEdge* qe = mesh_->GetQuarterEdge(i);
+    std::map<VertexIndex, u32> vertex_2_serialization_index;  // Remember the order
 
-//             u32 vertex_index = std::numeric_limits<u32>::max();
-//             if (qe->vertex != nullptr) {
-//                 vertex_index = qe->vertex->index;
-//             }
-//             buffer.write(reinterpret_cast<const char*>(&vertex_index), sizeof(u32));
-//             buffer.write(reinterpret_cast<const char*>(&qe->next->index), sizeof(u32));
-//             buffer.write(reinterpret_cast<const char*>(&qe->rot->index), sizeof(u32));
-//         }
+    VertexIndex i_vertex = mesh_.GetFirstVertexIndex();
+    while (IsValid(i_vertex)) {
+        const common::Vec2f& v = mesh_.GetVertex(i_vertex);
+        buffer.write(reinterpret_cast<const char*>(&v.x), sizeof(f32));
+        buffer.write(reinterpret_cast<const char*>(&v.y), sizeof(f32));
+        vertex_2_serialization_index[i_vertex] = (u32)(size(vertex_2_serialization_index));
+        i_vertex = mesh_.GetNext(i_vertex);
+    }
 
-//         entry.SetData(buffer.str());
-//     }
+    // Figure out the quarter edge serialization order
+    std::map<QuarterEdgeIndex, u32> qe_2_serialization_index;  // Remember the order
+    QuarterEdgeIndex qe = mesh_.GetFirstQuarterEdgeIndex();
+    while (IsValid(qe)) {
+        qe_2_serialization_index[qe] = (u32)(size(qe_2_serialization_index));
+        qe = mesh_.GetNext(qe);
+    }
 
-//     return entry;
-// }
+    // Serialize the quarter edges
+    qe = mesh_.GetFirstQuarterEdgeIndex();
+    while (IsValid(qe)) {
+        u32 vertex_index = std::numeric_limits<u32>::max();
+        const QuarterEdge& qe_data = mesh_.GetQuarterEdge(qe);
+        if (!IsValid(qe_data.i_vertex)) {
+            vertex_index = vertex_2_serialization_index[qe_data.i_vertex];
+        }
 
-// //
-// ------------------------------------------------------------------------------------------------
-// AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
-//     AssetsExporterEntry entry;
-//     entry.SetName(name);
+        u32 nxt = qe_2_serialization_index[qe_data.i_nxt];
+        u32 rot = qe_2_serialization_index[qe_data.i_rot];
 
-//     // We cannot properly export if mesh is null.
-//     if (not mesh_) {
-//         return entry;
-//     }
+        buffer.write(reinterpret_cast<const char*>(&vertex_index), sizeof(u32));
+        buffer.write(reinterpret_cast<const char*>(&nxt), sizeof(u32));
+        buffer.write(reinterpret_cast<const char*>(&rot), sizeof(u32));
 
-//     // --------------------------------------
-//     // Serialize the content
-//     std::stringstream buffer;
+        qe = mesh_.GetNext(qe);
+    }
 
-//     // Serialize the counts
-//     u32 n_side_infos = side_infos_.size();
-//     buffer.write(reinterpret_cast<const char*>(&n_side_infos), sizeof(u32));
+    entry.SetData(buffer.str());
 
-//     // Serialize the side infos
-//     for (const auto& side_info : side_infos_) {
-//         ExportedSideInfo exported_side_info = {.flags = side_info.flags,
-//                                                .texture_id = side_info.texture_id,
-//                                                .x_offset = side_info.x_offset,
-//                                                .y_offset = side_info.y_offset};
-
-//         // TEMP - MOVE TO BETTER PLACE.
-//         exported_side_info.flags = 0;
-//         // Calculate the angle of the side info, and set it to shaded depending.
-//         common::Vec2f a = vertices_[side_info.a_ind];
-//         common::Vec2f b = vertices_[side_info.b_ind];
-//         float angle = atan2(b.y - a.y, b.x - a.x);
-//         float angledist =
-//             std::min(common::AngleDist(angle, 0.0f), common::AngleDist(angle, 3.14159265f));
-//         if (angledist > M_PI / 4) {
-//             // shaded
-//             exported_side_info.flags |= kSideInfoFlag_DARK;
-//         }
-
-//         buffer.write(reinterpret_cast<const char*>(&exported_side_info),
-//                      sizeof(exported_side_info));
-//     }
-
-//     // Serialize a vector[u16] of quarter edge index -> side info index.
-//     // Uses 0xFFFF to indicate no quarter edge.
-//     for (size_t i = 0; i < mesh_->NumQuarterEdges(); i++) {
-//         const QuarterEdge* qe = mesh_->GetQuarterEdge(i);
-//         u16 side_info_index = std::numeric_limits<u16>::max();
-//         if (IsPrimalEdge(*qe) && !mesh_->IsBoundaryVertex(qe->vertex) &&
-//             !mesh_->IsBoundaryVertex(mesh_->Sym(qe)->vertex)) {
-//             size_t a_ind = MeshVertexIndexToMapVertexIndex(qe->vertex->index);
-//             size_t b_ind = MeshVertexIndexToMapVertexIndex(mesh_->Sym(qe)->vertex->index);
-//             auto it_side = side_to_info_.find(std::make_pair(a_ind, b_ind));
-//             if (it_side != side_to_info_.end()) {
-//                 side_info_index = (u16)(it_side->second);
-//             }
-//         }
-//         buffer.write(reinterpret_cast<const char*>(&side_info_index), sizeof(u16));
-//     }
-
-//     // --------------------------------------
-//     entry.SetData(buffer.str());
-
-//     return entry;
-// }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// bool GameMap::Export(core::AssetsExporter* exporter) const {
-//     if (not mesh_) {
-//         // We cannot export if our mesh is null
-//         return false;
-//     }
-
-//     // First, write out the geometry_mesh entry for the delaunay mesh
-//     exporter->AddEntry(ExportDelaunayMesh(kAssetEntryGeometryMesh));
-
-//     // Then write out all side info definitions
-//     exporter->AddEntry(ExportSideInfos(kAssetEntrySideInfos));
-
-//     return true;
-// }
+    return entry;
+}
 
 // ------------------------------------------------------------------------------------------------
-bool GameMap::LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
-                               const core::AssetsExporter& exporter) {
+AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
+    AssetsExporterEntry entry;
+    entry.SetName(name);
+
+    // --------------------------------------
+    // Serialize the content
+    std::stringstream buffer;
+
+    // Serialize the counts
+    u32 n_side_infos = side_infos_.size();
+    buffer.write(reinterpret_cast<const char*>(&n_side_infos), sizeof(u32));
+
+    // Serialize the side infos
+
+    std::map<QuarterEdgeIndex, u16> sideinfo_2_serialization_index;  // Remember the order
+
+    for (const auto& it : side_infos_) {
+        const SideInfo& side_info = it.second;
+
+        ExportedSideInfo exported_side_info = {.flags = side_info.flags,
+                                               .texture_id = side_info.texture_id,
+                                               .x_offset = side_info.x_offset,
+                                               .y_offset = side_info.y_offset};
+
+        // // TODO: Remove this calculation
+        // // Calculate the angle of the side info, and set it to shaded depending.
+        // common::Vec2f a = vertices_[side_info.a_ind];
+        // common::Vec2f b = vertices_[side_info.b_ind];
+        // float angle = atan2(b.y - a.y, b.x - a.x);
+        // float angledist =
+        //     std::min(common::AngleDist(angle, 0.0f), common::AngleDist(angle, 3.14159265f));
+        // if (angledist > M_PI / 4) {
+        //     // shaded
+        //     exported_side_info.flags |= kSideInfoFlag_DARK;
+        // }
+
+        buffer.write(reinterpret_cast<const char*>(&exported_side_info),
+                     sizeof(exported_side_info));
+
+        sideinfo_2_serialization_index[side_info.qe] = (u16)(size(sideinfo_2_serialization_index));
+    }
+
+    // Serialize a vector[u16] of quarter edge index -> side info index.
+    // Uses 0xFFFF to indicate no side info.
+    QuarterEdgeIndex qe = mesh_.GetFirstQuarterEdgeIndex();
+    while (IsValid(qe)) {
+        u16 side_info_index = std::numeric_limits<u16>::max();
+        auto it_side = sideinfo_2_serialization_index.find(qe);
+        if (it_side != sideinfo_2_serialization_index.end()) {
+            side_info_index = it_side->second;
+        }
+
+        buffer.write(reinterpret_cast<const char*>(&side_info_index), sizeof(u16));
+
+        qe = mesh_.GetNext(qe);
+    }
+
+    // --------------------------------------
+    entry.SetData(buffer.str());
+
+    return entry;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool GameMap::Export(AssetsExporter* exporter) const {
+    // First, write out the geometry_mesh entry for the delaunay mesh
+    exporter->AddEntry(ExportDelaunayMesh(kAssetEntryGeometryMesh));
+
+    // Then write out all side info definitions
+    exporter->AddEntry(ExportSideInfos(kAssetEntrySideInfos));
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool GameMap::LoadDelaunayMesh(DelaunayMesh* mesh, const std::string& name,
+                               const AssetsExporter& exporter) {
     const AssetsExporterEntry* entry = exporter.FindEntry(name);
     if (entry == nullptr) {
         std::cout << "Failed to find entry " << name << std::endl;
@@ -290,7 +299,7 @@ bool GameMap::LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name
 }
 
 // ------------------------------------------------------------------------------------------------
-bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter) {
+bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& exporter) {
     const AssetsExporterEntry* entry = exporter.FindEntry(name);
     if (entry == nullptr) {
         std::cout << "Failed to find entry " << name << std::endl;
@@ -338,7 +347,7 @@ bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter&
 }
 
 // ------------------------------------------------------------------------------------------------
-bool GameMap::Import(const core::AssetsExporter& exporter) {
+bool GameMap::Import(const AssetsExporter& exporter) {
     // Clear the game map
     Clear();
 
@@ -399,7 +408,7 @@ QuarterEdgeIndex GameMap::FindEdgeNearPosition(const common::Vec2f& pos, Quarter
     f32 dist_bc = common::GetDistanceToLine(pos, b, c);
     f32 dist_ca = common::GetDistanceToLine(pos, c, a);
 
-    QuarterEdgeIndex qe_selected = {core::kInvalidIndex};
+    QuarterEdgeIndex qe_selected = {kInvalidIndex};
     f32 min_distance = tolerance;
     if (dist_ab < min_distance) {
         qe_selected = qe_ab;

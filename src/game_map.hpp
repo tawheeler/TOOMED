@@ -70,7 +70,7 @@ class GameMap {
     bool MaybeFlipEdge(QuarterEdgeIndex qe_primal);
 
     // // Write the GameMap entries into the exporter.
-    // bool Export(core::AssetsExporter* exporter) const;
+    bool Export(core::AssetsExporter* exporter) const;
 
     // Load the GameMap from the given file. This results the GameMap.
     bool Import(const core::AssetsExporter& exporter);
@@ -86,8 +86,8 @@ class GameMap {
                                           f32 tolerance = 0.2) const;
 
   private:
-    // AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
-    // AssetsExporterEntry ExportSideInfos(const std::string& name) const;
+    AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
+    AssetsExporterEntry ExportSideInfos(const std::string& name) const;
 
     bool LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
                           const core::AssetsExporter& exporter);
