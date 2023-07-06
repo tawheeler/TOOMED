@@ -12,6 +12,9 @@
 #include "delaunay_mesh.hpp"
 #include "game_map.hpp"
 #include "geometry_utils.hpp"
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
 #include "math_utils.hpp"
 #include "typedefs.hpp"
 
@@ -56,18 +59,18 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
     f32 x_camera = SCREEN_SIZE_X / 2 + (x_global - camera_pos.x) * camera_zoom;
     x_camera = fmod(x_camera, line_spacing_camera);
     while (x_camera < SCREEN_SIZE_X) {
-        x_camera += line_spacing_camera;
         SDL_RenderDrawLine(renderer, (int)(x_camera), (int)(0), (int)(x_camera),
                            (int)(SCREEN_SIZE_Y));
+        x_camera += line_spacing_camera;
     }
 
     f32 y_global = camera_pos.y - fmod(camera_pos.y, line_spacing);
     f32 y_camera = SCREEN_SIZE_Y / 2 - (y_global - camera_pos.y) * camera_zoom;
     y_camera = fmod(y_camera, line_spacing_camera);
     while (y_camera < SCREEN_SIZE_Y) {
-        y_camera += line_spacing_camera;
         SDL_RenderDrawLine(renderer, (int)(0), (int)(y_camera), (int)(SCREEN_SIZE_X),
                            (int)(y_camera));
+        y_camera += line_spacing_camera;
     }
 }
 
@@ -116,6 +119,11 @@ int main() {
     // Initialize SDL
     ASSERT(SDL_Init(SDL_INIT_VIDEO) == 0, "SDL initialization failed: %s\n", SDL_GetError());
 
+    // From 2.0.18: Enable native IME.
+#ifdef SDL_HINT_IME_SHOW_UI
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
+
     // Create a window
     SDL_Window* window = SDL_CreateWindow("TOOM EDITOR", SDL_WINDOWPOS_CENTERED_DISPLAY(1),
                                           SDL_WINDOWPOS_CENTERED_DISPLAY(1), SCREEN_SIZE_X,
@@ -123,7 +131,8 @@ int main() {
     ASSERT(window, "Error creating SDL window: %s\n", SDL_GetError());
 
     // Create a renderer
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer* renderer =
+        SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
     ASSERT(renderer, "Error creating SDL renderer: %s\n", SDL_GetError());
 
     // Create a texture
@@ -131,6 +140,22 @@ int main() {
         SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
                           SCREEN_SIZE_X, SCREEN_SIZE_Y);
     ASSERT(texture, "Error creating SDL texture: %s\n", SDL_GetError());
+
+    // Set up Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+
+    // Set up a Dear ImGui style
+    ImGui::StyleColorsDark();
+    // ImGui::StyleColorsLight();
+
+    // Set up the Dear ImGui Platform/Renderer backends
+    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer2_Init(renderer);
 
     // Create our map
     core::GameMap map;
@@ -148,11 +173,25 @@ int main() {
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
 
-    bool move_toward_vertex = false;
+    // ImGui state
+    bool show_demo_window = true;
+    bool show_another_window = false;
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
     bool continue_running = true;
     while (continue_running) {
+        // Poll and handle events (inputs, window resize, etc.)
+        // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui
+        // wants to use your inputs.
+        // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main
+        //   application, or clear/overwrite your copy of the mouse data.
+        // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main
+        //   application, or clear/overwrite your copy of the keyboard data.
+        // Generally you may always pass all inputs to dear imgui, and hide them from your
+        // application based on those two flags.
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT) {
                 continue_running = false;
                 break;
@@ -161,13 +200,13 @@ int main() {
                        event.window.windowID == SDL_GetWindowID(window)) {
                 continue_running = false;
                 break;
-            } else if (event.type == SDL_MOUSEWHEEL) {
+            } else if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse) {
                 if (event.wheel.preciseY > 0) {
                     camera_zoom *= 1.1;
                 } else {
                     camera_zoom /= 1.1;
                 }
-            } else if (event.type == SDL_MOUSEBUTTONDOWN) {
+            } else if (event.type == SDL_MOUSEBUTTONDOWN && !io.WantCaptureMouse) {
                 if (!mouse_is_pressed) {
                     // New press
                     mouse_is_pressed = true;
@@ -187,7 +226,7 @@ int main() {
                             map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
                     }
                 }
-            } else if (event.type == SDL_MOUSEBUTTONUP) {
+            } else if (event.type == SDL_MOUSEBUTTONUP && !io.WantCaptureMouse) {
                 if (mouse_is_pressed) {
                     // New release
                     mouse_is_pressed = false;
@@ -215,7 +254,7 @@ int main() {
                         }
                     }
                 }
-            } else if (event.type == SDL_MOUSEMOTION) {
+            } else if (event.type == SDL_MOUSEMOTION && !io.WantCaptureMouse) {
                 // Move the mouse
                 mouse_pos = CameraToGlobal(
                     common::Vec2f(event.motion.x, event.motion.y),
@@ -227,14 +266,13 @@ int main() {
                     if (core::IsValid(selected_vertex_index)) {
                         // Move the given vertex
                         map.MoveVertexToward(selected_vertex_index, mouse_pos);
-                        move_toward_vertex = true;
                     } else {
                         // Pan the camera
                         camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
                     }
                 }
 
-            } else if (event.type == SDL_KEYDOWN) {
+            } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
                 if (event.key.keysym.sym == SDLK_e) {
                     // ExportGameData(map); // TODO
                 } else if (event.key.keysym.sym == SDLK_i) {
@@ -256,10 +294,6 @@ int main() {
             }
         }
 
-        if (move_toward_vertex && IsValid(selected_vertex_index) && !mouse_is_pressed) {
-            // map.MoveVertexToward(selected_vertex_index, mouse_pos);
-        }
-
         u32 color_white = 0xFFFFFFFF;
         u32 color_background = 0x414141FF;
         u32 color_light_background = 0x454545FF;
@@ -270,6 +304,9 @@ int main() {
 
         // Clear screen
         SetColor(renderer, color_background);
+        // SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y *
+        // 255),
+        //                        (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
         SDL_RenderClear(renderer);
 
         if (core::IsValid(qe_mouse_face)) {
@@ -459,6 +496,77 @@ int main() {
                                    (int)(b_cam.y));
             }
         }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplSDLRenderer2_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
+
+        // Show a simple window that we create ourselves. We use a Begin/End pair to create a
+        // named window.
+        // {
+        //     static float f = 0.0f;
+        //     static int counter = 0;
+
+        //     // Create a window called "Hello, world!" and append into it.
+        //     ImGui::Begin("Hello, world!");
+
+        //     // Display some text (you can use a format strings too)
+        //     ImGui::Text("This is some useful text.");
+
+        //     // Edit bools storing our window open/close state
+        //     ImGui::Checkbox("Demo Window", &show_demo_window);
+        //     ImGui::Checkbox("Another Window", &show_another_window);
+
+        //     // Edit 1 float using a slider from 0.0f to 1.0f
+        //     ImGui::SliderFloat("float", &f, -1.0f, 1.0f);
+
+        //     // Edit 3 floats representing a color
+        //     ImGui::ColorEdit3("clear color", (float*)&clear_color);
+
+        //     // Buttons return true when clicked (most widgets return
+        //     // true when edited/activated)
+        //     if (ImGui::Button("Zoom")) {
+        //         counter++;
+        //     }
+        //     ImGui::SameLine();
+        //     ImGui::Text("counter = %d", counter);
+
+        //     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate,
+        //                 io.Framerate);
+        //     ImGui::End();
+        // }
+
+        static bool vertex_panel_drawn_last_frame = false;
+        static common::Vec2f vertex_panel_target;
+        if (core::IsValid(selected_vertex_index)) {
+            // Vertex panel
+            vertex_panel_drawn_last_frame = true;
+            ImGui::Begin("Vertex");
+
+            const core::DelaunayMesh& mesh = map.GetMesh();
+            const auto& v = mesh.GetVertex(selected_vertex_index);
+            if (!vertex_panel_drawn_last_frame || !io.WantCaptureMouse) {
+                vertex_panel_target = v;
+            }
+
+            ImGui::InputFloat("x", &vertex_panel_target.x, 0.1f);
+            ImGui::InputFloat("y", &vertex_panel_target.y, 0.1f);
+            map.MoveVertexToward(selected_vertex_index, vertex_panel_target);
+
+            ImGui::End();
+        } else {
+            vertex_panel_drawn_last_frame = false;
+        }
+
+        // Rendering
+        ImGui::Render();
+        SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+        // SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y *
+        // 255),
+        //                        (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
+        // SDL_RenderClear(renderer);
+        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
 
         // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor
         // refresh rate. (30Hz)
