@@ -51,6 +51,15 @@ void GameMap::Clear() {
 // }
 
 // ------------------------------------------------------------------------------------------------
+SideInfo* GameMap::GetEditableSideInfo(QuarterEdgeIndex qe_dual) {
+    auto it = side_infos_.find(qe_dual);
+    if (it == side_infos_.end()) {
+        return nullptr;
+    }
+    return &(it->second);
+}
+
+// ------------------------------------------------------------------------------------------------
 VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
     DelaunayMesh::InsertVertexResult result = mesh_.InsertVertex(pos);
 
@@ -397,6 +406,14 @@ QuarterEdgeIndex GameMap::FindEdgeNearPosition(const common::Vec2f& pos, Quarter
     if (dist_ca < min_distance) {
         qe_selected = qe_ca;
         min_distance = dist_ca;
+    }
+
+    // If this edge does not have a side_info, but the reversed edge does, select that instead.
+    if (IsValid(qe_selected) && side_infos_.find(qe_selected) == side_infos_.end()) {
+        QuarterEdgeIndex qe_rev = mesh_.Sym(qe_selected);
+        if (side_infos_.find(qe_rev) != side_infos_.end()) {
+            qe_selected = qe_rev;
+        }
     }
 
     return qe_selected;

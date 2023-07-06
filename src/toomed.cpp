@@ -537,26 +537,61 @@ int main() {
         //     ImGui::End();
         // }
 
-        static bool vertex_panel_drawn_last_frame = false;
-        static common::Vec2f vertex_panel_target;
-        if (core::IsValid(selected_vertex_index)) {
-            // Vertex panel
-            vertex_panel_drawn_last_frame = true;
-            ImGui::Begin("Vertex");
+        // Vertex panel
+        {
+            static bool vertex_panel_drawn_last_frame = false;
+            static common::Vec2f vertex_panel_target;
+            if (core::IsValid(selected_vertex_index)) {
+                // Vertex panel
+                vertex_panel_drawn_last_frame = true;
+                ImGui::Begin("Vertex");
+                ImGui::Text("index:      %llu", selected_vertex_index.i);
+                ImGui::Separator();
 
-            const core::DelaunayMesh& mesh = map.GetMesh();
-            const auto& v = mesh.GetVertex(selected_vertex_index);
-            if (!vertex_panel_drawn_last_frame || !io.WantCaptureMouse) {
-                vertex_panel_target = v;
+                const core::DelaunayMesh& mesh = map.GetMesh();
+                const auto& v = mesh.GetVertex(selected_vertex_index);
+                if (!vertex_panel_drawn_last_frame || !io.WantCaptureMouse) {
+                    vertex_panel_target = v;
+                }
+
+                ImGui::InputFloat("x", &vertex_panel_target.x, 0.1f);
+                ImGui::InputFloat("y", &vertex_panel_target.y, 0.1f);
+                map.MoveVertexToward(selected_vertex_index, vertex_panel_target);
+
+                ImGui::End();
+            } else {
+                vertex_panel_drawn_last_frame = false;
             }
+        }
 
-            ImGui::InputFloat("x", &vertex_panel_target.x, 0.1f);
-            ImGui::InputFloat("y", &vertex_panel_target.y, 0.1f);
-            map.MoveVertexToward(selected_vertex_index, vertex_panel_target);
+        // Side Info panel
+        if (core::IsValid(selected_edge_index)) {
+            core::SideInfo* side_info = map.GetEditableSideInfo(selected_edge_index);
+            if (side_info == nullptr)
+                continue;
 
+            ImGui::Begin("SideInfo");
+            ImGui::Text("index:      %llu", selected_edge_index.i);
+            ImGui::Separator();
+            ImGui::Text("IsDark: %s",
+                        ((side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "TRUE" : "FALSE"));
+            ImGui::Text("flags:      %X", side_info->flags);
+
+            int flags = 0;
+            u16 step_u16 = 1;
+            if (ImGui::InputScalar("texture_id", ImGuiDataType_U16, (void*)(&side_info->texture_id),
+                                   (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
+                // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                if (side_info->texture_id > 17) {
+                    side_info->texture_id = 17;
+                }
+            }
+            i16 step_i16 = 1;
+            ImGui::InputScalar("x_offset", ImGuiDataType_S16, (void*)(&side_info->x_offset),
+                               (void*)(&step_i16), (void*)(NULL), "%d", flags);
+            ImGui::InputScalar("y_offset", ImGuiDataType_S16, (void*)(&side_info->y_offset),
+                               (void*)(&step_i16), (void*)(NULL), "%d", flags);
             ImGui::End();
-        } else {
-            vertex_panel_drawn_last_frame = false;
         }
 
         // Rendering

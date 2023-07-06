@@ -41,6 +41,9 @@ class GameMap {
 
     const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
 
+    // Returns a pointer to the corresponding side info, or nullptr if it does not exist.
+    SideInfo* GetEditableSideInfo(QuarterEdgeIndex qe_dual);
+
     // // Whether the given edge exists
     // bool HasEdge(int a_ind, int b_ind) const;
     // std::optional<usize> GetEdgeIndex(int a_ind, int b_ind) const;
