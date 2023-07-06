@@ -174,9 +174,6 @@ int main() {
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
 
     // ImGui state
-    bool show_demo_window = true;
-    bool show_another_window = false;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     bool continue_running = true;
     while (continue_running) {
@@ -317,9 +314,6 @@ int main() {
 
         // Clear screen
         SetColor(renderer, color_background);
-        // SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y *
-        // 255),
-        //                        (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
         SDL_RenderClear(renderer);
 
         if (core::IsValid(qe_mouse_face)) {
@@ -515,41 +509,6 @@ int main() {
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
-        // Show a simple window that we create ourselves. We use a Begin/End pair to create a
-        // named window.
-        // {
-        //     static float f = 0.0f;
-        //     static int counter = 0;
-
-        //     // Create a window called "Hello, world!" and append into it.
-        //     ImGui::Begin("Hello, world!");
-
-        //     // Display some text (you can use a format strings too)
-        //     ImGui::Text("This is some useful text.");
-
-        //     // Edit bools storing our window open/close state
-        //     ImGui::Checkbox("Demo Window", &show_demo_window);
-        //     ImGui::Checkbox("Another Window", &show_another_window);
-
-        //     // Edit 1 float using a slider from 0.0f to 1.0f
-        //     ImGui::SliderFloat("float", &f, -1.0f, 1.0f);
-
-        //     // Edit 3 floats representing a color
-        //     ImGui::ColorEdit3("clear color", (float*)&clear_color);
-
-        //     // Buttons return true when clicked (most widgets return
-        //     // true when edited/activated)
-        //     if (ImGui::Button("Zoom")) {
-        //         counter++;
-        //     }
-        //     ImGui::SameLine();
-        //     ImGui::Text("counter = %d", counter);
-
-        //     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate,
-        //                 io.Framerate);
-        //     ImGui::End();
-        // }
-
         // Vertex panel
         {
             static bool vertex_panel_drawn_last_frame = false;
@@ -558,7 +517,7 @@ int main() {
                 // Vertex panel
                 vertex_panel_drawn_last_frame = true;
                 ImGui::Begin("Vertex");
-                ImGui::Text("index:      %llu", selected_vertex_index.i);
+                ImGui::Text("index:      %lu", selected_vertex_index.i);
                 ImGui::Separator();
 
                 const core::DelaunayMesh& mesh = map.GetMesh();
@@ -582,7 +541,7 @@ int main() {
             core::SideInfo* side_info = map.GetEditableSideInfo(selected_edge_index);
             if (side_info != nullptr) {
                 ImGui::Begin("SideInfo");
-                ImGui::Text("index:      %llu", selected_edge_index.i);
+                ImGui::Text("index:      %lu", selected_edge_index.i);
                 ImGui::Separator();
                 ImGui::Text("IsDark: ");
                 ImGui::SameLine();
@@ -615,10 +574,6 @@ int main() {
         // Rendering
         ImGui::Render();
         SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-        // SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y *
-        // 255),
-        //                        (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
-        // SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
 
         // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor
