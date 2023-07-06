@@ -463,6 +463,37 @@ void DelaunayMesh::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Ve
 }
 
 // ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::MaybeFlipEdge(QuarterEdgeIndex qe_primal) {
+    // We cannot flip the edge if it is constrained.
+    if (IsConstrained(qe_primal)) {
+        return false;
+    }
+
+    // Do not flip the boundary edge
+    VertexData& a_data = Get(Get(qe_primal).i_vertex);
+    VertexData& b_data = Get(Get(Sym(qe_primal)).i_vertex);
+    int num_boundary_vertices = IsBoundaryVertex(a_data) + IsBoundaryVertex(b_data);
+    if (num_boundary_vertices == 2) {  // one edge being on the boundary is okay
+        return false;
+    }
+
+    const common::Vec2f& a = a_data.v;
+    const common::Vec2f& b = b_data.v;
+    const common::Vec2f& c = GetVertex(Sym(Prev(qe_primal)));  // right of A->B
+    const common::Vec2f& d = GetVertex(Sym(Next(qe_primal)));  // left of A->B
+
+    // We can only flip the edge if its surrounding quad is convex.
+    if (common::GetRightHandedness(c, b, d) <= 0 || common::GetRightHandedness(c, d, a) <= 0) {
+        return false;
+    }
+
+    // Flip!
+    FlipEdgeImpl(qe_primal);
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 void DelaunayMesh::FlipEdgeImpl(QuarterEdgeIndex qe) {
     QuarterEdgeIndex qe_sym = Sym(qe);
     QuarterEdgeIndex qe_a = Prev(qe);

@@ -207,23 +207,36 @@ int main() {
                     camera_zoom /= 1.1;
                 }
             } else if (event.type == SDL_MOUSEBUTTONDOWN && !io.WantCaptureMouse) {
-                if (!mouse_is_pressed) {
-                    // New press
-                    mouse_is_pressed = true;
-                    mouse_click_pos = CameraToGlobal(common::Vec2f(event.button.x, event.button.y),
-                                                     camera_pos, camera_zoom);
-                    camera_pos_at_mouse_click = camera_pos;
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    if (!mouse_is_pressed) {
+                        // New press
+                        mouse_is_pressed = true;
+                        mouse_click_pos = CameraToGlobal(
+                            common::Vec2f(event.button.x, event.button.y), camera_pos, camera_zoom);
+                        camera_pos_at_mouse_click = camera_pos;
 
-                    // Check for a selected vertex near the current mouse position
-                    selected_vertex_index =
-                        map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
+                        // Check for a selected vertex near the current mouse position
+                        selected_vertex_index =
+                            map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
 
-                    // Check for a selected edge near the current mouse position if we did not
-                    // select a vertex
-                    selected_edge_index = {core::kInvalidIndex};
-                    if (!IsValid(selected_vertex_index)) {
-                        selected_edge_index =
-                            map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                        // Check for a selected edge near the current mouse position if we did not
+                        // select a vertex
+                        selected_edge_index = {core::kInvalidIndex};
+                        if (!IsValid(selected_vertex_index)) {
+                            selected_edge_index =
+                                map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                        }
+                    }
+                } else if (event.button.button == SDL_BUTTON_MIDDLE) {
+                    // Check for a selected edge.
+                    common::Vec2f click_pos = CameraToGlobal(
+                        common::Vec2f(event.button.x, event.button.y), camera_pos, camera_zoom);
+                    core::QuarterEdgeIndex edge =
+                        map.FindEdgeNearPosition(click_pos, qe_mouse_face);
+                    if (core::IsValid(edge)) {
+                        if (!map.MaybeFlipEdge(edge)) {
+                            std::cout << "Failed to flip edge" << std::endl;
+                        }
                     }
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP && !io.WantCaptureMouse) {
@@ -567,31 +580,36 @@ int main() {
         // Side Info panel
         if (core::IsValid(selected_edge_index)) {
             core::SideInfo* side_info = map.GetEditableSideInfo(selected_edge_index);
-            if (side_info == nullptr)
-                continue;
-
-            ImGui::Begin("SideInfo");
-            ImGui::Text("index:      %llu", selected_edge_index.i);
-            ImGui::Separator();
-            ImGui::Text("IsDark: %s",
-                        ((side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "TRUE" : "FALSE"));
-            ImGui::Text("flags:      %X", side_info->flags);
-
-            int flags = 0;
-            u16 step_u16 = 1;
-            if (ImGui::InputScalar("texture_id", ImGuiDataType_U16, (void*)(&side_info->texture_id),
-                                   (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
-                // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                if (side_info->texture_id > 17) {
-                    side_info->texture_id = 17;
+            if (side_info != nullptr) {
+                ImGui::Begin("SideInfo");
+                ImGui::Text("index:      %llu", selected_edge_index.i);
+                ImGui::Separator();
+                ImGui::Text("IsDark: ");
+                ImGui::SameLine();
+                if (ImGui::Button(
+                        ((side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "TRUE" : "FALSE"))) {
+                    side_info->flags ^= core::kSideInfoFlag_DARK;  // toggle
                 }
+
+                ImGui::Text("flags:      %X", side_info->flags);
+
+                int flags = 0;
+                u16 step_u16 = 1;
+                if (ImGui::InputScalar("texture_id", ImGuiDataType_U16,
+                                       (void*)(&side_info->texture_id), (void*)(&step_u16),
+                                       (void*)(NULL), "%d", flags)) {
+                    // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                    if (side_info->texture_id > 17) {
+                        side_info->texture_id = 17;
+                    }
+                }
+                i16 step_i16 = 1;
+                ImGui::InputScalar("x_offset", ImGuiDataType_S16, (void*)(&side_info->x_offset),
+                                   (void*)(&step_i16), (void*)(NULL), "%d", flags);
+                ImGui::InputScalar("y_offset", ImGuiDataType_S16, (void*)(&side_info->y_offset),
+                                   (void*)(&step_i16), (void*)(NULL), "%d", flags);
+                ImGui::End();
             }
-            i16 step_i16 = 1;
-            ImGui::InputScalar("x_offset", ImGuiDataType_S16, (void*)(&side_info->x_offset),
-                               (void*)(&step_i16), (void*)(NULL), "%d", flags);
-            ImGui::InputScalar("y_offset", ImGuiDataType_S16, (void*)(&side_info->y_offset),
-                               (void*)(&step_i16), (void*)(NULL), "%d", flags);
-            ImGui::End();
         }
 
         // Rendering

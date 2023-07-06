@@ -148,6 +148,9 @@ void GameMap::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& 
     mesh_.MoveVertexToward(qe_primal, pos);
 }
 
+// ------------------------------------------------------------------------------------------------
+bool GameMap::MaybeFlipEdge(QuarterEdgeIndex qe_primal) { return mesh_.MaybeFlipEdge(qe_primal); }
+
 // //
 // ------------------------------------------------------------------------------------------------
 // AssetsExporterEntry GameMap::ExportDelaunayMesh(const std::string& name) const {
@@ -325,6 +328,9 @@ bool GameMap::LoadSideInfos(const std::string& name, const core::AssetsExporter&
             SideInfo& side_info = side_infos[side_info_index];
             side_info.qe = {i};
             side_infos_[side_info.qe] = side_info;
+
+            // Ensure that the quarter edges associated with any side info are solid.
+            mesh_.ConstrainEdge(side_info.qe);
         }
     }
 

@@ -208,6 +208,9 @@ class DelaunayMesh {
     // min_dist_to_edge_ to any edge.
     void MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos);
 
+    // Flip the given edge if we can. Returns whether a flip occurred.
+    bool MaybeFlipEdge(QuarterEdgeIndex qe_primal);
+
   private:
     // Private mutable getters
     VertexData& Get(VertexIndex i) { return vertices_[i.i]; }

@@ -66,6 +66,9 @@ class GameMap {
     // Move the vertex given by the primal quarter edge toward pos, within its surrounding polygon.
     void MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos);
 
+    // Flip the given edge if we can. Returns whether a flip occurred.
+    bool MaybeFlipEdge(QuarterEdgeIndex qe_primal);
+
     // // Write the GameMap entries into the exporter.
     // bool Export(core::AssetsExporter* exporter) const;
 
