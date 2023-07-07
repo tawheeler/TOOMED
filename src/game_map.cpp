@@ -191,7 +191,7 @@ AssetsExporterEntry GameMap::ExportDelaunayMesh(const std::string& name) const {
     while (IsValid(qe)) {
         u32 vertex_index = std::numeric_limits<u32>::max();
         const QuarterEdge& qe_data = mesh_.GetQuarterEdge(qe);
-        if (!IsValid(qe_data.i_vertex)) {
+        if (IsValid(qe_data.i_vertex)) {
             vertex_index = vertex_2_serialization_index[qe_data.i_vertex];
         }
 
