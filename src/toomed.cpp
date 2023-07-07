@@ -16,6 +16,7 @@
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
 #include "math_utils.hpp"
+#include "palette.hpp"
 #include "typedefs.hpp"
 
 #define SCREEN_SIZE_X 1280
@@ -97,6 +98,10 @@ void ExportGameData(const core::GameMap& map) {
     std::cout << "Exporting game data" << std::endl;
 
     core::AssetsExporter exporter;
+    std::cout << "Exporting core data" << std::endl;
+    exporter.AddEntry(core::ExportColorPalette());
+
+    std::cout << "Exporting map data" << std::endl;
     bool succeeded = map.Export(&exporter);
     if (!succeeded) {
         std::cout << "Failure while exporting game map! Not written to file." << std::endl;
@@ -164,7 +169,7 @@ int main() {
     common::Vec2f camera_pos = {2.0, 2.0};
     f32 camera_zoom = 50.0;
 
-    // Mouse press params
+    // GUI state
     bool mouse_is_pressed = false;
     common::Vec2f mouse_pos = {0.0, 0.0};
     common::Vec2f mouse_click_pos = {0.0, 0.0};
@@ -172,8 +177,6 @@ int main() {
     core::QuarterEdgeIndex selected_vertex_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
-
-    // ImGui state
 
     bool continue_running = true;
     while (continue_running) {
