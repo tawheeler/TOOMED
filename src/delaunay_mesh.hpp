@@ -156,6 +156,9 @@ class DelaunayMesh {
     // (The first three in vertices_)
     bool IsBoundaryVertex(VertexIndex i_vertex) const;
     bool IsBoundaryVertex(const VertexData& vertex_data) const;
+    bool IsBoundaryVertex(QuarterEdgeIndex qe_primal) const;
+
+    bool IsBoundaryEdge(QuarterEdgeIndex qe_primal) const;
 
     // // Returns true if an edge from i to j exists.
     // // Note that the current implementation loops over all quarter edges.

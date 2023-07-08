@@ -152,6 +152,16 @@ bool DelaunayMesh::IsBoundaryVertex(const VertexData& vertex_data) const {
 }
 
 // ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::IsBoundaryVertex(QuarterEdgeIndex qe_primal) const {
+    return IsBoundaryVertex(GetVertexIndex(qe_primal));
+}
+
+// ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::IsBoundaryEdge(QuarterEdgeIndex qe_primal) const {
+    return IsBoundaryVertex(qe_primal) && IsBoundaryVertex(Sym(qe_primal));
+}
+
+// ------------------------------------------------------------------------------------------------
 VertexIndex DelaunayMesh::LivenVertex() {
     VertexIndex i_vertex = {kInvalidIndex};
     if (IsValid(i_vertex_free_first_)) {

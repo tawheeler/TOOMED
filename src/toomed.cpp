@@ -19,8 +19,11 @@
 #include "palette.hpp"
 #include "typedefs.hpp"
 
-#define SCREEN_SIZE_X 1280
-#define SCREEN_SIZE_Y 720
+#define EDITOR_SCREEN_SIZE_X 1280
+#define EDITOR_SCREEN_SIZE_Y 720
+
+#define PLAYER_SCREEN_SIZE_X 640
+#define PLAYER_SCREEN_SIZE_Y 360
 
 #define ASSERT(_e, ...)               \
     if (!(_e)) {                      \
@@ -28,18 +31,22 @@
         exit(1);                      \
     }
 
+// ------------------------------------------------------------------------------------------------
 common::Vec2f GlobalToCamera(const common::Vec2f& g, const common::Vec2f& camera_pos,
                              f32 camera_zoom) {
     common::Vec2f c = (g - camera_pos) * camera_zoom;
-    return common::Vec2f(SCREEN_SIZE_X / 2 + c.x, SCREEN_SIZE_Y / 2 - c.y);
+    return common::Vec2f(EDITOR_SCREEN_SIZE_X / 2 + c.x, EDITOR_SCREEN_SIZE_Y / 2 - c.y);
 }
 
+// ------------------------------------------------------------------------------------------------
 common::Vec2f CameraToGlobal(const common::Vec2f& c, const common::Vec2f& camera_pos,
                              f32 camera_zoom) {
-    common::Vec2f g_offset = common::Vec2f(c.x - SCREEN_SIZE_X / 2, SCREEN_SIZE_Y / 2 - c.y);
+    common::Vec2f g_offset =
+        common::Vec2f(c.x - EDITOR_SCREEN_SIZE_X / 2, EDITOR_SCREEN_SIZE_Y / 2 - c.y);
     return g_offset / camera_zoom + camera_pos;
 }
 
+// ------------------------------------------------------------------------------------------------
 void SetColor(SDL_Renderer* renderer, u32 rgba) {
     u8 a = rgba & 0xFF;
     rgba >>= 8;
@@ -51,30 +58,238 @@ void SetColor(SDL_Renderer* renderer, u32 rgba) {
     SDL_SetRenderDrawColor(renderer, r, g, b, a);
 }
 
+// ------------------------------------------------------------------------------------------------
 void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common::Vec2f& camera_pos,
                 f32 camera_zoom) {
     SetColor(renderer, rgba);
 
     f32 line_spacing_camera = line_spacing * camera_zoom;
     f32 x_global = camera_pos.x - fmod(camera_pos.x, line_spacing);
-    f32 x_camera = SCREEN_SIZE_X / 2 + (x_global - camera_pos.x) * camera_zoom;
+    f32 x_camera = EDITOR_SCREEN_SIZE_X / 2 + (x_global - camera_pos.x) * camera_zoom;
     x_camera = fmod(x_camera, line_spacing_camera);
-    while (x_camera < SCREEN_SIZE_X) {
+    while (x_camera < EDITOR_SCREEN_SIZE_X) {
         SDL_RenderDrawLine(renderer, (int)(x_camera), (int)(0), (int)(x_camera),
-                           (int)(SCREEN_SIZE_Y));
+                           (int)(EDITOR_SCREEN_SIZE_Y));
         x_camera += line_spacing_camera;
     }
 
     f32 y_global = camera_pos.y - fmod(camera_pos.y, line_spacing);
-    f32 y_camera = SCREEN_SIZE_Y / 2 - (y_global - camera_pos.y) * camera_zoom;
+    f32 y_camera = EDITOR_SCREEN_SIZE_Y / 2 - (y_global - camera_pos.y) * camera_zoom;
     y_camera = fmod(y_camera, line_spacing_camera);
-    while (y_camera < SCREEN_SIZE_Y) {
-        SDL_RenderDrawLine(renderer, (int)(0), (int)(y_camera), (int)(SCREEN_SIZE_X),
+    while (y_camera < EDITOR_SCREEN_SIZE_Y) {
+        SDL_RenderDrawLine(renderer, (int)(0), (int)(y_camera), (int)(EDITOR_SCREEN_SIZE_X),
                            (int)(y_camera));
         y_camera += line_spacing_camera;
     }
 }
 
+// ------------------------------------------------------------------------------------------------
+void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
+                        const core::GameMap& game_map) {
+    const core::DelaunayMesh mesh = game_map.GetMesh();
+
+    // Camera data
+    common::Vec2f camera_fov = {1.5, 0.84375};
+    common::Vec2f camera_pos = {5.0, 5.0};
+    common::Vec2f camera_dir = {1.0, 0.0};
+    f32 camera_z = 0.4f;
+    core::QuarterEdgeIndex qe_camera = mesh.GetEnclosingTriangle(camera_pos);
+    if (!core::IsValid(qe_camera)) {
+        return;
+    }
+
+    f32 WALL_HEIGHT = 1.0f;
+
+    for (int x = 0; x < screen_size_x; x++) {
+        // Camera to pixel column
+        const f32 dw =
+            camera_fov.x / 2 - (camera_fov.x * x) / screen_size_x;  // TODO: Precompute once.
+        const common::Vec2f cp = {camera_dir.x - dw * camera_dir.y,
+                                  camera_dir.y + dw * camera_dir.x};
+
+        // Distance from the camera to the column
+        const f32 cam_len = common::Norm(cp);
+
+        // Ray direction through this column
+        const common::Vec2f dir = cp / cam_len;
+
+        // Start at the camera pos
+        core::QuarterEdgeIndex qe_dual = qe_camera;
+        common::Vec2f pos = camera_pos;
+
+        // The edge vector of the face that we last crossed
+        common::Vec2f v_face = {0.0, 0.0};
+
+        // Step through triangles until we hit a solid triangle
+        bool hit_boundary = false;
+        core::QuarterEdgeIndex qe_side_to_render = {core::kInvalidIndex};
+        const core::SideInfo* side_info;  // The side info we eventually hit.
+
+        int n_steps = 0;
+        while (n_steps < 100) {
+            n_steps += 1;
+
+            // Grab the enclosing triangle.
+            auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
+
+            common::Vec2f a = mesh.GetVertex(qe_ab);
+            common::Vec2f b = mesh.GetVertex(qe_bc);
+            common::Vec2f c = mesh.GetVertex(qe_ca);
+
+            // Project our ray out far enough that it would exit our mesh
+            f32 projection_distance = 100.0;  // Ridiculously large
+            common::Vec2f pos_next_delta = projection_distance * dir;
+            common::Vec2f pos_next = pos + pos_next_delta;
+
+            f32 min_interp = INFINITY;
+            core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
+            core::QuarterEdgeIndex qe_dual_next = {core::kInvalidIndex};
+
+            // See if we cross any of the 3 faces for the triangle we are in,
+            // and cross the first segment.
+            const f32 eps = 1e-4;
+            if (common::GetRightHandedness(a, b, pos_next) < -eps) {
+                // We would cross AB
+                common::Vec2f v = b - a;
+                common::Vec2f w = pos - a;
+                float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+                if (interp_ab < min_interp) {
+                    min_interp = interp_ab;
+                    qe_dual_next = mesh.Rot(qe_ab);
+                    qe_side = qe_ab;
+                    v_face = v;
+                }
+            }
+            if (common::GetRightHandedness(b, c, pos_next) < -eps) {
+                // We would cross BC
+                common::Vec2f v = c - b;
+                common::Vec2f w = pos - b;
+                float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+                if (interp_bc < min_interp) {
+                    min_interp = interp_bc;
+                    qe_dual_next = mesh.Rot(qe_bc);
+                    qe_side = qe_bc;
+                    v_face = v;
+                }
+            }
+            if (common::GetRightHandedness(c, a, pos_next) < -eps) {
+                // We would cross CA
+                common::Vec2f v = a - c;
+                common::Vec2f w = pos - c;
+                float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+                if (interp_ca < min_interp) {
+                    min_interp = interp_ca;
+                    qe_dual_next = mesh.Rot(qe_ca);
+                    qe_side = qe_ca;
+                    v_face = v;
+                }
+            }
+
+            // Move to the face.
+            if (core::IsValid(qe_dual_next)) {
+                // Should always be non-null.
+                pos += min_interp * pos_next_delta;
+                qe_dual = qe_dual_next;
+
+                // // Render the ceiling above the threshold.
+                // // Calculate the ray length
+                // const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
+
+                // // Calculate the pixel bounds that we fill the wall in for
+                // int y_hi = (int)(screen_size_y / 2.0f + cam_len * (WALL_HEIGHT - camera_z) /
+                //                                             ray_len * screen_size_y /
+                //                                             camera_fov.y);
+                // for (int y = y_hi + 1; y < screen_size_y; y++) {
+                //     u32 color = 0x345678FF;
+                //     pixels[(y * screen_size_x) + x] = color;
+                // }
+
+                // // TODO: Render floor
+
+                auto it = game_map.GetSideInfos().find(qe_side);
+                if (it != game_map.GetSideInfos().end()) {
+                    side_info = &(it->second);
+                    qe_side_to_render = qe_side;
+                    // TODO: game_map->side_infos[side_info_index].flags
+                    // The side info is solid.
+                    break;
+                }
+
+                // Also break if it is the boundary
+                if (game_map.GetMesh().IsBoundaryEdge(qe_side)) {
+                    hit_boundary = true;
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Calculate the ray length
+        const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
+        wall_raycast_radius[x] = ray_len;
+
+        // Calculate the pixel bounds that we fill the wall in for
+        int y_lo = (int)(screen_size_y / 2.0f -
+                         cam_len * camera_z / ray_len * screen_size_y / camera_fov.y);
+        int y_hi = (int)(screen_size_y / 2.0f + cam_len * (WALL_HEIGHT - camera_z) / ray_len *
+                                                    screen_size_y / camera_fov.y);
+        int y_lo_capped = std::max(y_lo, 0);
+        int y_hi_capped = std::min(y_hi, screen_size_y - 1);
+
+        // // Texture x offset determines whether we draw the light or dark version
+        // QuarterEdge* qe_face_src = qe_dual->rot->rot->rot;
+        // u32 texture_x_offset = 0;  // ((face_data[qe_face_src->index].flags & FACEDATA_FLAG_DARK)
+        // >
+        //                            // 0) ? TEXTURE_SIZE : 0;
+        // u32 texture_y_offset = 0;  // face_data[qe_face_src->index].texture_id * TEXTURE_SIZE;
+        // if (side_info_index != 0xFFFF) {
+        //     struct SideInfo* side_info = game_map->side_infos + side_info_index;
+        //     texture_x_offset = (side_info->flags & SIDEINFO_FLAG_DARK) > 0 ? TEXTURE_SIZE : 0;
+        //     texture_y_offset = side_info->texture_id * TEXTURE_SIZE;
+        // }
+
+        // // Calculate where along the segment we intersected.
+        // f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
+        // f32 x_along_texture = length(v_face) - length(sub(pos, *(qe_face_src->vertex)));
+
+        // u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
+        // u32 baseline =
+        //     GetColumnMajorPixelIndex(&BITMAP, texture_x + texture_x_offset, texture_y_offset);
+        // u32 denom = max(1, y_hi - y_lo);
+        // f32 y_loc = (f32)((y_hi - y_hi_capped) * TEXTURE_SIZE) / denom;
+        // f32 y_step = (f32)(TEXTURE_SIZE) / denom;
+        // for (int y = y_hi_capped; y >= y_lo_capped; y--) {
+        //     u32 texture_y = min((u32)(y_loc), TEXTURE_SIZE - 1);
+        //     u32 color = BITMAP.abgr[texture_y + baseline];
+        //     pixels[(y * SCREEN_SIZE_X) + x] = color;
+        //     y_loc += y_step;
+        // }
+
+        // Render the ceiling
+        u32 color_ceil = 0xFF222222;
+        for (int y = screen_size_y - 1; y > y_hi_capped; y--) {
+            pixels[(y * screen_size_x) + x] = color_ceil;
+        }
+
+        u32 color_lo = 0x1311DD;
+        u32 color_hi = 0x13DD11;
+        f32 interpolant = std::min(ray_len, 10.0f) / 10.0;
+        u32 color = color_lo + interpolant * (color_hi - color_lo);
+        color |= 0xFF000000;
+        for (int y = y_hi_capped; y >= y_lo_capped; y--) {
+            pixels[(y * screen_size_x) + x] = color;
+        }
+
+        // Render the floor
+        u32 color_floor = 0xFF444444;
+        for (int y = y_lo_capped - 1; y >= 0; y--) {
+            pixels[(y * screen_size_x) + x] = color_floor;
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
 void ImportGameData(core::GameMap* map) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Importing game data" << std::endl;
@@ -93,6 +308,7 @@ void ImportGameData(core::GameMap* map) {
     std::cout << "--------------------------------------" << std::endl;
 }
 
+// ------------------------------------------------------------------------------------------------
 void ExportGameData(const core::GameMap& map) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
@@ -116,6 +332,35 @@ void ExportGameData(const core::GameMap& map) {
     std::cout << "--------------------------------------" << std::endl;
 }
 
+// ------------------------------------------------------------------------------------------------
+class SDLWindowData {
+  public:
+    SDLWindowData(const char* title, int size_x, int size_y) :
+        screen_size_x(size_x), screen_size_y(size_y) {
+        window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED_DISPLAY(1),
+                                  SDL_WINDOWPOS_CENTERED_DISPLAY(1), size_x, size_y,
+                                  SDL_WINDOW_ALLOW_HIGHDPI);
+        ASSERT(window, "Error creating SDL window %s: %s\n", title, SDL_GetError());
+
+        renderer =
+            SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
+        ASSERT(renderer, "Error creating SDL renderer for window %s: %s\n", title, SDL_GetError());
+
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
+                                    size_x, size_y);
+        ASSERT(texture, "Error creating SDL texture for window %s: %s\n", title, SDL_GetError());
+    }
+
+    // Destructor.
+    ~SDLWindowData() { SDL_DestroyWindow(window); }
+
+    int screen_size_x;
+    int screen_size_y;
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    SDL_Texture* texture;
+};
+
 int main() {
     SDL_version ver;
     SDL_GetVersion(&ver);
@@ -129,22 +374,9 @@ int main() {
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
 #endif
 
-    // Create a window
-    SDL_Window* window = SDL_CreateWindow("TOOM EDITOR", SDL_WINDOWPOS_CENTERED_DISPLAY(1),
-                                          SDL_WINDOWPOS_CENTERED_DISPLAY(1), SCREEN_SIZE_X,
-                                          SCREEN_SIZE_Y, SDL_WINDOW_ALLOW_HIGHDPI);
-    ASSERT(window, "Error creating SDL window: %s\n", SDL_GetError());
-
-    // Create a renderer
-    SDL_Renderer* renderer =
-        SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
-    ASSERT(renderer, "Error creating SDL renderer: %s\n", SDL_GetError());
-
-    // Create a texture
-    SDL_Texture* texture =
-        SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
-                          SCREEN_SIZE_X, SCREEN_SIZE_Y);
-    ASSERT(texture, "Error creating SDL texture: %s\n", SDL_GetError());
+    // Create our windows
+    SDLWindowData editor_window_data("TOOM EDITOR", EDITOR_SCREEN_SIZE_X, EDITOR_SCREEN_SIZE_Y);
+    SDLWindowData player_window_data("PLAYER VIEW", PLAYER_SCREEN_SIZE_X, PLAYER_SCREEN_SIZE_Y);
 
     // Set up Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -159,8 +391,8 @@ int main() {
     // ImGui::StyleColorsLight();
 
     // Set up the Dear ImGui Platform/Renderer backends
-    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer2_Init(renderer);
+    ImGui_ImplSDL2_InitForSDLRenderer(editor_window_data.window, editor_window_data.renderer);
+    ImGui_ImplSDLRenderer2_Init(editor_window_data.renderer);
 
     // Create our map
     core::GameMap map;
@@ -177,6 +409,11 @@ int main() {
     core::QuarterEdgeIndex selected_vertex_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
+
+    // Player view data
+    u32 player_view_pixels[player_window_data.screen_size_x *
+                           player_window_data.screen_size_y];  // row-major
+    f32 wall_raycast_radius[player_window_data.screen_size_x];
 
     bool continue_running = true;
     while (continue_running) {
@@ -197,7 +434,8 @@ int main() {
                 break;
             } else if (event.type == SDL_WINDOWEVENT &&
                        event.window.event == SDL_WINDOWEVENT_CLOSE &&
-                       event.window.windowID == SDL_GetWindowID(window)) {
+                       (event.window.windowID == SDL_GetWindowID(editor_window_data.window) ||
+                        event.window.windowID == SDL_GetWindowID(player_window_data.window))) {
                 continue_running = false;
                 break;
             } else if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse) {
@@ -315,11 +553,13 @@ int main() {
         u32 color_qe_normal = 0xFF48CFFF;
         u32 color_active = 0xFFA0A0FF;
 
+        // ------------------------------------------------------------------------------------------------
         // Clear screen
-        SetColor(renderer, color_background);
-        SDL_RenderClear(renderer);
+        SetColor(editor_window_data.renderer, color_background);
+        SDL_RenderClear(editor_window_data.renderer);
 
         if (core::IsValid(qe_mouse_face)) {
+            auto renderer = editor_window_data.renderer;
             const core::DelaunayMesh& mesh = map.GetMesh();
 
             // Fill enclosing triangle
@@ -353,6 +593,7 @@ int main() {
 
         {
             // Draw major vertical lines
+            auto renderer = editor_window_data.renderer;
             f32 major_line_spacing = 1.0;
             f32 minor_line_spacing = major_line_spacing / 8.0;
 
@@ -366,6 +607,7 @@ int main() {
 
         {
             // Render the mesh
+            auto renderer = editor_window_data.renderer;
             const core::DelaunayMesh& mesh = map.GetMesh();
 
             core::QuarterEdgeIndex qe = mesh.GetFirstQuarterEdgeIndex();
@@ -397,6 +639,7 @@ int main() {
         }
 
         {  // Render all side_infos (these are directed)
+            auto renderer = editor_window_data.renderer;
             SetColor(renderer, color_light_gray);
 
             const core::DelaunayMesh& mesh = map.GetMesh();
@@ -420,6 +663,7 @@ int main() {
         }
 
         {  // Render all vertices
+            auto renderer = editor_window_data.renderer;
             const core::DelaunayMesh& mesh = map.GetMesh();
 
             core::VertexIndex i_vertex = mesh.GetFirstVertexIndex();
@@ -451,6 +695,7 @@ int main() {
 
         if (IsValid(selected_edge_index)) {
             // Render our selected edge
+            auto renderer = editor_window_data.renderer;
             SetColor(renderer, color_white);
 
             const core::DelaunayMesh& mesh = map.GetMesh();
@@ -473,6 +718,7 @@ int main() {
 
         if (core::IsValid(selected_vertex_index)) {
             // Render our selected vertex
+            auto renderer = editor_window_data.renderer;
             const core::DelaunayMesh& mesh = map.GetMesh();
             const auto& v = mesh.GetVertex(selected_vertex_index);
             auto v_cam = GlobalToCamera(v, camera_pos, camera_zoom);
@@ -507,6 +753,7 @@ int main() {
             }
         }
 
+        // ------------------------------------------------------------------------------------------------
         // Start the Dear ImGui frame
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
@@ -574,16 +821,28 @@ int main() {
             }
         }
 
-        // Rendering
+        // ImGUI Rendering
         ImGui::Render();
-        SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+        SDL_RenderSetScale(editor_window_data.renderer, io.DisplayFramebufferScale.x,
+                           io.DisplayFramebufferScale.y);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+
+        // ------------------------------------------------------------------------------------------------
+        {
+            // Render the player view.
+            RenderWallsViaMesh(player_view_pixels, wall_raycast_radius,
+                               player_window_data.screen_size_x, player_window_data.screen_size_y,
+                               map);
+
+            SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
+                              player_window_data.screen_size_x * 4);
+            SDL_RenderCopyEx(player_window_data.renderer, player_window_data.texture, NULL, NULL,
+                             0.0, NULL, SDL_FLIP_VERTICAL);
+        }
 
         // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor
         // refresh rate. (30Hz)
-        SDL_RenderPresent(renderer);
+        SDL_RenderPresent(editor_window_data.renderer);
+        SDL_RenderPresent(player_window_data.renderer);
     }
-
-    // Destroy our window
-    SDL_DestroyWindow(window);
 }

@@ -7,6 +7,9 @@
 namespace common {
 
 // ------------------------------------------------------------------------------------------------
+Vec2f operator*(float scalar, const Vec2f& vec) { return Vec2f(scalar * vec.x, scalar * vec.y); }
+
+// ------------------------------------------------------------------------------------------------
 Vec2i ToFixedPoint(const Vec2f& v, float resolution) {
     long x = static_cast<long>(v.x * resolution);
     long y = static_cast<long>(v.y * resolution);

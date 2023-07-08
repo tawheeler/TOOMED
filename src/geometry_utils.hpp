@@ -46,6 +46,9 @@ struct Vec2f {
     }
 };
 
+// Operator overload for left-multiply.
+Vec2f operator*(float scalar, const Vec2f& vec);
+
 // An integer version of the above type.
 struct Vec2i {
     long x;
