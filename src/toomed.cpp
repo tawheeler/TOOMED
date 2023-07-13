@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "assets_exporter.hpp"
+#include "assets_importer.hpp"
 #include "delaunay_mesh.hpp"
 #include "game_map.hpp"
 #include "geometry_utils.hpp"
@@ -85,7 +86,7 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
 
 // ------------------------------------------------------------------------------------------------
 void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
-                        const core::GameMap& game_map) {
+                        const core::GameMap& game_map, const core::OldStyleBitmap& bitmap) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     // Camera data
@@ -99,6 +100,8 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
     }
 
     f32 WALL_HEIGHT = 1.0f;
+    u32 TEXTURE_SIZE = 64;
+    f32 TILE_WIDTH = 1.0f;
 
     for (int x = 0; x < screen_size_x; x++) {
         // Camera to pixel column
@@ -121,7 +124,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         common::Vec2f v_face = {0.0, 0.0};
 
         // Step through triangles until we hit a solid triangle
-        bool hit_boundary = false;
         core::QuarterEdgeIndex qe_side_to_render = {core::kInvalidIndex};
         const core::SideInfo* side_info;  // The side info we eventually hit.
 
@@ -216,8 +218,7 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                 }
 
                 // Also break if it is the boundary
-                if (game_map.GetMesh().IsBoundaryEdge(qe_side)) {
-                    hit_boundary = true;
+                if (mesh.IsBoundaryEdge(qe_side)) {
                     break;
                 }
             } else {
@@ -237,49 +238,48 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         int y_lo_capped = std::max(y_lo, 0);
         int y_hi_capped = std::min(y_hi, screen_size_y - 1);
 
-        // // Texture x offset determines whether we draw the light or dark version
-        // QuarterEdge* qe_face_src = qe_dual->rot->rot->rot;
-        // u32 texture_x_offset = 0;  // ((face_data[qe_face_src->index].flags & FACEDATA_FLAG_DARK)
-        // >
-        //                            // 0) ? TEXTURE_SIZE : 0;
-        // u32 texture_y_offset = 0;  // face_data[qe_face_src->index].texture_id * TEXTURE_SIZE;
-        // if (side_info_index != 0xFFFF) {
-        //     struct SideInfo* side_info = game_map->side_infos + side_info_index;
-        //     texture_x_offset = (side_info->flags & SIDEINFO_FLAG_DARK) > 0 ? TEXTURE_SIZE : 0;
-        //     texture_y_offset = side_info->texture_id * TEXTURE_SIZE;
-        // }
-
-        // // Calculate where along the segment we intersected.
-        // f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
-        // f32 x_along_texture = length(v_face) - length(sub(pos, *(qe_face_src->vertex)));
-
-        // u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
-        // u32 baseline =
-        //     GetColumnMajorPixelIndex(&BITMAP, texture_x + texture_x_offset, texture_y_offset);
-        // u32 denom = max(1, y_hi - y_lo);
-        // f32 y_loc = (f32)((y_hi - y_hi_capped) * TEXTURE_SIZE) / denom;
-        // f32 y_step = (f32)(TEXTURE_SIZE) / denom;
-        // for (int y = y_hi_capped; y >= y_lo_capped; y--) {
-        //     u32 texture_y = min((u32)(y_loc), TEXTURE_SIZE - 1);
-        //     u32 color = BITMAP.abgr[texture_y + baseline];
-        //     pixels[(y * SCREEN_SIZE_X) + x] = color;
-        //     y_loc += y_step;
-        // }
-
         // Render the ceiling
         u32 color_ceil = 0xFF222222;
         for (int y = screen_size_y - 1; y > y_hi_capped; y--) {
             pixels[(y * screen_size_x) + x] = color_ceil;
         }
 
-        u32 color_lo = 0x1311DD;
-        u32 color_hi = 0x13DD11;
-        f32 interpolant = std::min(ray_len, 10.0f) / 10.0;
-        u32 color = color_lo + interpolant * (color_hi - color_lo);
-        color |= 0xFF000000;
-        for (int y = y_hi_capped; y >= y_lo_capped; y--) {
-            pixels[(y * screen_size_x) + x] = color;
+        // Texture x offset determines whether we draw the light or dark version
+        core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
+
+        u32 texture_x_offset = 0;
+        u32 texture_y_offset = 0;
+        if (side_info != nullptr) {
+            texture_x_offset = (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
+            texture_y_offset = side_info->texture_id * TEXTURE_SIZE;
         }
+
+        // Calculate where along the segment we intersected.
+        f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
+        f32 x_along_texture =
+            common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
+
+        u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
+        u32 baseline =
+            bitmap.GetColumnMajorPixelIndex(texture_x + texture_x_offset, texture_y_offset);
+        u32 denom = std::max(1, y_hi - y_lo);
+        f32 y_loc = (f32)((y_hi - y_hi_capped) * TEXTURE_SIZE) / denom;
+        f32 y_step = (f32)(TEXTURE_SIZE) / denom;
+        for (int y = y_hi_capped; y >= y_lo_capped; y--) {
+            u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
+            u32 color = bitmap.abgr[texture_y + baseline];
+            pixels[(y * screen_size_x) + x] = color;
+            y_loc += y_step;
+        }
+
+        // u32 color_lo = 0x1311DD;
+        // u32 color_hi = 0x13DD11;
+        // f32 interpolant = std::min(ray_len, 10.0f) / 10.0;
+        // u32 color = color_lo + interpolant * (color_hi - color_lo);
+        // color |= 0xFF000000;
+        // for (int y = y_hi_capped; y >= y_lo_capped; y--) {
+        //     pixels[(y * screen_size_x) + x] = color;
+        // }
 
         // Render the floor
         u32 color_floor = 0xFF444444;
@@ -388,11 +388,21 @@ int main() {
 
     // Set up a Dear ImGui style
     ImGui::StyleColorsDark();
-    // ImGui::StyleColorsLight();
+    ImGui::GetStyle().FrameRounding = 2.0f;
 
     // Set up the Dear ImGui Platform/Renderer backends
     ImGui_ImplSDL2_InitForSDLRenderer(editor_window_data.window, editor_window_data.renderer);
     ImGui_ImplSDLRenderer2_Init(editor_window_data.renderer);
+
+    // Import our julia assets
+    std::unique_ptr<core::AssetsImporter> julia_assets =
+        core::AssetsImporter::LoadFromFile("../toom/assets/assets.bin");
+    ASSERT(julia_assets, "Failed to load Julia Assets");
+
+    // Extract our wall textures
+    auto bitmap_data_opt = julia_assets->FindEntryData("textures");
+    ASSERT(bitmap_data_opt, "Failed to find texture data");
+    core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
 
     // Create our map
     core::GameMap map;
@@ -463,6 +473,16 @@ int main() {
                         if (!IsValid(selected_vertex_index)) {
                             selected_edge_index =
                                 map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                        }
+
+                        // TODO: Remove me.
+                        // Make the containing face solid if we did not select an edge either
+                        if (!IsValid(selected_vertex_index) && !IsValid(selected_edge_index)) {
+                            map.AddFaceInfo(qe_mouse_face);
+                            core::FaceInfo* face_info = map.GetEditableFaceInfo(qe_mouse_face);
+                            if (face_info) {
+                                face_info->flags |= core::kFaceInfoFlag_SOLID;
+                            }
                         }
                     }
                 } else if (event.button.button == SDL_BUTTON_MIDDLE) {
@@ -605,8 +625,44 @@ int main() {
                        camera_zoom);
         }
 
-        {
-            // Render the mesh
+        {  // Render all solid faces
+            auto renderer = editor_window_data.renderer;
+            const core::DelaunayMesh& mesh = map.GetMesh();
+
+            for (const auto& it : map.GetFaceInfos()) {
+                core::QuarterEdgeIndex qe = it.second.qe;
+
+                // Fill enclosing triangle
+                const auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe);
+                const common::Vec2f& a = mesh.GetVertex(qe_ab);
+                const common::Vec2f& b = mesh.GetVertex(qe_bc);
+                const common::Vec2f& c = mesh.GetVertex(qe_ca);
+
+                auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
+                auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
+                auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+
+                SDL_Vertex triangle[3];
+                triangle[0] = {
+                    SDL_FPoint{a_cam.x, a_cam.y},
+                    SDL_Color{55, 55, 77, 100},
+                    SDL_FPoint{0},
+                };
+                triangle[1] = {
+                    SDL_FPoint{b_cam.x, b_cam.y},
+                    SDL_Color{55, 55, 77, 100},
+                    SDL_FPoint{0},
+                };
+                triangle[2] = {
+                    SDL_FPoint{c_cam.x, c_cam.y},
+                    SDL_Color{55, 55, 77, 100},
+                    SDL_FPoint{0},
+                };
+                SDL_RenderGeometry(renderer, nullptr, triangle, 3, nullptr, 0);
+            }
+        }
+
+        {  // Render the mesh
             auto renderer = editor_window_data.renderer;
             const core::DelaunayMesh& mesh = map.GetMesh();
 
@@ -832,7 +888,7 @@ int main() {
             // Render the player view.
             RenderWallsViaMesh(player_view_pixels, wall_raycast_radius,
                                player_window_data.screen_size_x, player_window_data.screen_size_y,
-                               map);
+                               map, bitmap);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);

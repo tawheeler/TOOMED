@@ -30,6 +30,15 @@ struct SideInfo {
     QuarterEdgeIndex qe;  // The primary quarter edge that represents A->B
 };
 
+constexpr u16 kFaceInfoFlag_SOLID = 1;
+
+// The information associated with one face in the map, represented by any dual quarter edge.
+// (All dual quarter edges originated from the same face will be associated with the same FaceInfo).
+struct FaceInfo {
+    u16 flags;
+    QuarterEdgeIndex qe;  // The dual quarter edge that originates at this face
+};
+
 // Represents our game map
 class GameMap {
   public:
@@ -40,9 +49,13 @@ class GameMap {
     void Clear();
 
     const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
+    const std::map<QuarterEdgeIndex, FaceInfo>& GetFaceInfos() const { return face_infos_; };
 
     // Returns a pointer to the corresponding side info, or nullptr if it does not exist.
-    SideInfo* GetEditableSideInfo(QuarterEdgeIndex qe_dual);
+    SideInfo* GetEditableSideInfo(QuarterEdgeIndex qe_primal);
+
+    // Returns a pointer to the corresponding face info, or nullptr if it does not exist.
+    FaceInfo* GetEditableFaceInfo(QuarterEdgeIndex qe_dual);
 
     // // Whether the given edge exists
     // bool HasEdge(int a_ind, int b_ind) const;
@@ -62,6 +75,9 @@ class GameMap {
 
     // // Remove a directed edge (side_info). This action does not invalidate the mesh.
     // bool RemoveDirectedEdge(usize edge_index);
+
+    // Have the GameMap create a new FaceInfo for the given face.
+    bool AddFaceInfo(QuarterEdgeIndex qe_dual);
 
     // Move the vertex given by the primal quarter edge toward pos, within its surrounding polygon.
     void MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos);
@@ -100,6 +116,12 @@ class GameMap {
     // Only primal quarter edges should ever be associated with side_infos.
     // Any edges that do not have side infos are simply transparent.
     std::map<QuarterEdgeIndex, SideInfo> side_infos_;
+
+    // All of the map-related face information.
+    // Only dual quarter edges should ever be associated with face_infos.
+    // TODO: This is wrong, as we need to associate only one qe per face, otherwise we get multiple
+    // copies.
+    std::map<QuarterEdgeIndex, FaceInfo> face_infos_;
 };
 
 }  // namespace core

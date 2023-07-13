@@ -4,8 +4,6 @@
 #include <string>
 #include <vector>
 
-// #include "delaunay_mesh.hpp"
-// #include "game_map.hpp"
 #include "typedefs.hpp"
 
 #define ASSET_NAME_BYTE_COUNT 16

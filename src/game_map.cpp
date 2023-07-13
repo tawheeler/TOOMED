@@ -51,9 +51,17 @@ void GameMap::Clear() {
 // }
 
 // ------------------------------------------------------------------------------------------------
-SideInfo* GameMap::GetEditableSideInfo(QuarterEdgeIndex qe_dual) {
-    auto it = side_infos_.find(qe_dual);
+SideInfo* GameMap::GetEditableSideInfo(QuarterEdgeIndex qe_primal) {
+    auto it = side_infos_.find(qe_primal);
     if (it == side_infos_.end()) {
+        return nullptr;
+    }
+    return &(it->second);
+}
+// ------------------------------------------------------------------------------------------------
+FaceInfo* GameMap::GetEditableFaceInfo(QuarterEdgeIndex qe_dual) {
+    auto it = face_infos_.find(qe_dual);
+    if (it == face_infos_.end()) {
         return nullptr;
     }
     return &(it->second);
@@ -142,6 +150,31 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
 
 //     return true;
 // }
+
+// ------------------------------------------------------------------------------------------------
+bool GameMap::AddFaceInfo(QuarterEdgeIndex qe_dual) {
+    if (!mesh_.IsDual(qe_dual)) {
+        return false;
+    }
+
+    auto it = face_infos_.find(qe_dual);
+    if (it != face_infos_.end()) {
+        return false;
+    }
+
+    FaceInfo face_info = {};
+    face_info.qe = qe_dual;
+
+    face_infos_[qe_dual] = (face_info);
+    QuarterEdgeIndex qe = mesh_.Next(qe_dual);
+    while (qe != qe_dual) {
+        face_info.qe = qe;
+        face_infos_[qe] = (face_info);
+        qe = mesh_.Next(qe);
+    }
+
+    return true;
+}
 
 // ------------------------------------------------------------------------------------------------
 void GameMap::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos) {
