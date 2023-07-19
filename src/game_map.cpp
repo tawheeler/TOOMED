@@ -263,10 +263,11 @@ AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
     for (const auto& it : side_infos_) {
         const SideInfo& side_info = it.second;
 
-        ExportedSideInfo exported_side_info = {.flags = side_info.flags,
-                                               .texture_id = side_info.texture_id,
-                                               .x_offset = side_info.x_offset,
-                                               .y_offset = side_info.y_offset};
+        ExportedSideInfo exported_side_info = {
+            .flags = side_info.flags,
+            .texture_id = side_info.texture_info_middle.texture_id,
+            .x_offset = side_info.texture_info_middle.x_offset,
+            .y_offset = side_info.texture_info_middle.y_offset};
 
         // // TODO: Remove this calculation
         // // Calculate the angle of the side info, and set it to shaded depending.
@@ -353,9 +354,9 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
 
         SideInfo side_info = {};
         side_info.flags = exported_side_info.flags;
-        side_info.texture_id = exported_side_info.texture_id;
-        side_info.x_offset = exported_side_info.x_offset;
-        side_info.y_offset = exported_side_info.y_offset;
+        side_info.texture_info_middle.texture_id = exported_side_info.texture_id;
+        side_info.texture_info_middle.x_offset = exported_side_info.x_offset;
+        side_info.texture_info_middle.y_offset = exported_side_info.y_offset;
         // NOTE: quarter edge index not yet set.
 
         side_infos.emplace_back(side_info);

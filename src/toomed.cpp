@@ -125,7 +125,7 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
         // Step through triangles until we hit a solid triangle
         core::QuarterEdgeIndex qe_side_to_render = {core::kInvalidIndex};
-        const core::SideInfo* side_info;  // The side info we eventually hit.
+        const core::SideInfo* side_info = nullptr;  // The side info we eventually hit.
 
         int n_steps = 0;
         while (n_steps < 100) {
@@ -251,7 +251,9 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         u32 texture_y_offset = 0;
         if (side_info != nullptr) {
             texture_x_offset = (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
-            texture_y_offset = side_info->texture_id * TEXTURE_SIZE;
+            texture_y_offset = side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
+            texture_x_offset += side_info->texture_info_middle.x_offset;
+            texture_y_offset += side_info->texture_info_middle.y_offset;
         }
 
         // Calculate where along the segment we intersected.
@@ -860,19 +862,57 @@ int main() {
 
                 int flags = 0;
                 u16 step_u16 = 1;
-                if (ImGui::InputScalar("texture_id", ImGuiDataType_U16,
-                                       (void*)(&side_info->texture_id), (void*)(&step_u16),
-                                       (void*)(NULL), "%d", flags)) {
+                i16 step_i16 = 1;
+
+                ImGui::Separator();
+                if (ImGui::InputScalar("upper texture_id", ImGuiDataType_U16,
+                                       (void*)(&side_info->texture_info_upper.texture_id),
+                                       (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_id > 17) {
-                        side_info->texture_id = 17;
+                    if (side_info->texture_info_upper.texture_id > 17) {
+                        side_info->texture_info_upper.texture_id = 17;
                     }
                 }
-                i16 step_i16 = 1;
-                ImGui::InputScalar("x_offset", ImGuiDataType_S16, (void*)(&side_info->x_offset),
+
+                ImGui::InputScalar("upper x_offset", ImGuiDataType_S16,
+                                   (void*)(&side_info->texture_info_upper.x_offset),
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
-                ImGui::InputScalar("y_offset", ImGuiDataType_S16, (void*)(&side_info->y_offset),
+                ImGui::InputScalar("upper y_offset", ImGuiDataType_S16,
+                                   (void*)(&side_info->texture_info_upper.y_offset),
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
+
+                ImGui::Separator();
+                if (ImGui::InputScalar("middle texture_id", ImGuiDataType_U16,
+                                       (void*)(&side_info->texture_info_middle.texture_id),
+                                       (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
+                    // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                    if (side_info->texture_info_middle.texture_id > 17) {
+                        side_info->texture_info_middle.texture_id = 17;
+                    }
+                }
+                ImGui::InputScalar("middle x_offset", ImGuiDataType_S16,
+                                   (void*)(&side_info->texture_info_middle.x_offset),
+                                   (void*)(&step_i16), (void*)(NULL), "%d", flags);
+                ImGui::InputScalar("middle y_offset", ImGuiDataType_S16,
+                                   (void*)(&side_info->texture_info_middle.y_offset),
+                                   (void*)(&step_i16), (void*)(NULL), "%d", flags);
+
+                ImGui::Separator();
+                if (ImGui::InputScalar("lower texture_id", ImGuiDataType_U16,
+                                       (void*)(&side_info->texture_info_lower.texture_id),
+                                       (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
+                    // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                    if (side_info->texture_info_lower.texture_id > 17) {
+                        side_info->texture_info_lower.texture_id = 17;
+                    }
+                }
+                ImGui::InputScalar("lower x_offset", ImGuiDataType_S16,
+                                   (void*)(&side_info->texture_info_lower.x_offset),
+                                   (void*)(&step_i16), (void*)(NULL), "%d", flags);
+                ImGui::InputScalar("lower y_offset", ImGuiDataType_S16,
+                                   (void*)(&side_info->texture_info_lower.y_offset),
+                                   (void*)(&step_i16), (void*)(NULL), "%d", flags);
+
                 ImGui::End();
             }
         }

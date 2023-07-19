@@ -17,6 +17,13 @@ namespace core {
 const std::string kAssetEntryGeometryMesh = "geometry_mesh";
 const std::string kAssetEntrySideInfos = "side_infos";
 
+struct TextureInfo {
+    u16 texture_id;  // Index in the texture atlas
+    i16 x_offset;    // Texture x offset
+    i16 y_offset;    // Texture y offset
+    // TODO: scale
+};
+
 constexpr u16 kSideInfoFlag_DARK = 1;
 
 // The information associated with one side of an edge between vertices in the map.
@@ -24,10 +31,10 @@ constexpr u16 kSideInfoFlag_DARK = 1;
 // side of A->B.
 struct SideInfo {
     u16 flags;
-    u16 texture_id;
-    i16 x_offset;         // Texture x offset
-    i16 y_offset;         // Texture y offset
-    QuarterEdgeIndex qe;  // The primary quarter edge that represents A->B
+    TextureInfo texture_info_lower;   // Texture displayed if the floor height increases.
+    TextureInfo texture_info_middle;  // Texture displayed if the wall is solid.
+    TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases.
+    QuarterEdgeIndex qe;              // The primary quarter edge that represents A->B
 };
 
 constexpr u16 kFaceInfoFlag_SOLID = 1;
@@ -36,6 +43,8 @@ constexpr u16 kFaceInfoFlag_SOLID = 1;
 // (All dual quarter edges originated from the same face will be associated with the same FaceInfo).
 struct FaceInfo {
     u16 flags;
+    f32 z_floor;          // The floor height for this face
+    f32 z_ceil;           // The ceiling height for this face (>= z_floor)
     QuarterEdgeIndex qe;  // The dual quarter edge that originates at this face
 };
 
