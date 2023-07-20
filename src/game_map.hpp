@@ -25,7 +25,7 @@ struct TextureInfo {
 };
 
 constexpr u16 kSideInfoFlag_DARK = 1;
-constexpr u16 kSideInfoFlag_PASSABLE = 2;
+constexpr u16 kSideInfoFlag_PASSABLE = 2;  // The side info can be traversed
 
 // The information associated with one side of an edge between vertices in the map.
 // If this represents the directed edge A->B, then it describes the edge viewed on the right
@@ -34,18 +34,22 @@ constexpr u16 kSideInfoFlag_PASSABLE = 2;
 // A solid sideinfo does not set its lower or upper texture, and thus only has the middle
 // texture, z_floor, and z_ceil.
 
-// A floor height change sideinfo has no middle texture, and thus has a lower and/or upper texture.
+// A passable side info's middle texture is not displayed.
 
 struct SideInfo {
     u16 flags;
+    u16 sector_id;                    // Index into the sector list
     TextureInfo texture_info_lower;   // Texture displayed if the floor height increases
     TextureInfo texture_info_middle;  // Texture displayed if the wall is solid
     TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases
-    f32 z_floor;  // Height of the floor on the side the edge is viewed from (right of A->B)
-    f32 z_lower;  // Height of the boundary between the lower and middle texture
-    f32 z_upper;  // Height of the boundary between the middle and upper texture
-    f32 z_ceil;   // Height of the ceiling on the side the edge is viewed from (right of A-B)
-    QuarterEdgeIndex qe;  // The primary quarter edge that represents A->B
+    QuarterEdgeIndex qe;              // The primary quarter edge that represents A->B
+};
+
+// All side infos refer to a sector to contain the corresponding floor/ceiling information.
+struct Sector {
+    u16 flags;
+    f32 z_floor;
+    f32 z_ceil;
 };
 
 // Represents our game map
@@ -60,7 +64,12 @@ class GameMap {
     const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
 
     // Returns a pointer to the corresponding side info, or nullptr if it does not exist.
+    const SideInfo* GetSideInfo(QuarterEdgeIndex qe_primal) const;
     SideInfo* GetEditableSideInfo(QuarterEdgeIndex qe_primal);
+
+    // Returns a pointer to the corresponding sector, or nullptr if it does not exist.
+    const Sector* GetSector(u16 sector_index) const;
+    Sector* GetEditableSector(u16 sector_index);
 
     // // Whether the given edge exists
     // bool HasEdge(int a_ind, int b_ind) const;
@@ -81,8 +90,8 @@ class GameMap {
     // // Remove a directed edge (side_info). This action does not invalidate the mesh.
     // bool RemoveDirectedEdge(usize edge_index);
 
-    // Have the GameMap create a new FaceInfo for the given face.
-    bool AddFaceInfo(QuarterEdgeIndex qe_dual);
+    // Have the GameMap create a new sector, and return its index.
+    u16 AddSector();
 
     // Move the vertex given by the primal quarter edge toward pos, within its surrounding polygon.
     void MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos);
@@ -121,6 +130,9 @@ class GameMap {
     // Only primal quarter edges should ever be associated with side_infos.
     // Any edges that do not have side infos are simply transparent.
     std::map<QuarterEdgeIndex, SideInfo> side_infos_;
+
+    // Provides height information for a set of faces.
+    std::vector<Sector> sectors_;
 };
 
 }  // namespace core

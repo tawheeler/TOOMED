@@ -51,12 +51,37 @@ void GameMap::Clear() {
 // }
 
 // ------------------------------------------------------------------------------------------------
+const SideInfo* GameMap::GetSideInfo(QuarterEdgeIndex qe_primal) const {
+    auto it = side_infos_.find(qe_primal);
+    if (it == side_infos_.end()) {
+        return nullptr;
+    }
+    return &(it->second);
+}
+
+// ------------------------------------------------------------------------------------------------
 SideInfo* GameMap::GetEditableSideInfo(QuarterEdgeIndex qe_primal) {
     auto it = side_infos_.find(qe_primal);
     if (it == side_infos_.end()) {
         return nullptr;
     }
     return &(it->second);
+}
+
+// ------------------------------------------------------------------------------------------------
+const Sector* GameMap::GetSector(u16 sector_index) const {
+    if (sectors_.size() <= sector_index) {
+        return nullptr;
+    }
+    return &(sectors_[sector_index]);
+}
+
+// ------------------------------------------------------------------------------------------------
+Sector* GameMap::GetEditableSector(u16 sector_index) {
+    if (sectors_.size() <= sector_index) {
+        return nullptr;
+    }
+    return &(sectors_[sector_index]);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -72,6 +97,16 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
     }
 
     return result.i_vertex;
+}
+
+// ------------------------------------------------------------------------------------------------
+u16 GameMap::AddSector() {
+    u16 idx = sectors_.size();
+    Sector sector = {};
+    sector.z_floor = 0.0;
+    sector.z_ceil = 1.0;
+    sectors_.push_back(sector);
+    return idx;
 }
 
 // //
@@ -321,13 +356,10 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
 
         SideInfo side_info = {};
         side_info.flags = exported_side_info.flags;
+        side_info.sector_id = 0;
         side_info.texture_info_middle.texture_id = exported_side_info.texture_id;
         side_info.texture_info_middle.x_offset = exported_side_info.x_offset;
         side_info.texture_info_middle.y_offset = exported_side_info.y_offset;
-        side_info.z_floor = 0.0;
-        side_info.z_lower = 0.2;
-        side_info.z_upper = 0.8;
-        side_info.z_ceil = 1.0;
         // NOTE: quarter edge index not yet set.
 
         side_infos.emplace_back(side_info);

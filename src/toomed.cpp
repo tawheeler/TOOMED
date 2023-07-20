@@ -225,18 +225,29 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                 pos += min_interp * pos_next_delta;
                 qe_dual = mesh.Rot(qe_side);  // The next face
 
-                auto it = game_map.GetSideInfos().find(qe_side);
-                if (it != game_map.GetSideInfos().end()) {
-                    side_info = &(it->second);
-
+                const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
+                if (side_info != nullptr) {
                     const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
                     const f32 gamma = cam_len / ray_len * screen_size_y_over_fov_y;
                     wall_raycast_radius[x] = ray_len;
 
-                    int y_ceil = (int)(half_screen_size + gamma * (side_info->z_ceil - camera_z));
-                    int y_upper = (int)(half_screen_size + gamma * (side_info->z_upper - camera_z));
-                    int y_lower = (int)(half_screen_size + gamma * (side_info->z_lower - camera_z));
-                    int y_floor = (int)(half_screen_size + gamma * (side_info->z_floor - camera_z));
+                    f32 z_ceil = 1.0;
+                    f32 z_upper = 0.8;
+                    f32 z_lower = 0.2;
+                    f32 z_floor = 0.0;
+
+                    const core::Sector* sector = game_map.GetSector(side_info->sector_id);
+                    if (sector != nullptr) {
+                        z_ceil = sector->z_ceil;
+                        z_upper = sector->z_ceil;
+                        z_lower = sector->z_floor;
+                        z_floor = sector->z_floor;
+                    }
+
+                    int y_ceil = (int)(half_screen_size + gamma * (z_ceil - camera_z));
+                    int y_upper = (int)(half_screen_size + gamma * (z_upper - camera_z));
+                    int y_lower = (int)(half_screen_size + gamma * (z_lower - camera_z));
+                    int y_floor = (int)(half_screen_size + gamma * (z_floor - camera_z));
 
                     // Render the ceiling above the upper texture
                     while (y_hi > y_ceil) {
@@ -883,23 +894,21 @@ int main() {
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
 
                 ImGui::Separator();
-                if (ImGui::InputScalar("z_ceil", ImGuiDataType_Float, (void*)(&side_info->z_ceil),
-                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
-                    side_info->z_ceil = std::max(side_info->z_ceil, side_info->z_upper);
-                }
-                if (ImGui::InputScalar("z_upper", ImGuiDataType_Float, (void*)(&side_info->z_upper),
-                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
-                    side_info->z_upper =
-                        std::clamp(side_info->z_upper, side_info->z_lower, side_info->z_ceil);
-                }
-                if (ImGui::InputScalar("z_lower", ImGuiDataType_Float, (void*)(&side_info->z_lower),
-                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
-                    side_info->z_lower =
-                        std::clamp(side_info->z_lower, side_info->z_floor, side_info->z_upper);
-                }
-                if (ImGui::InputScalar("z_floor", ImGuiDataType_Float, &side_info->z_floor,
-                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
-                    side_info->z_floor = std::min(side_info->z_floor, side_info->z_lower);
+
+                ImGui::Text("sector index:      %lu", side_info->sector_id);
+                core::Sector* sector = map.GetEditableSector(side_info->sector_id);
+                if (sector == nullptr) {
+                    ImGui::Text("SECTOR INDEX IS INVALID");
+                } else {
+                    ImGui::Text("sector flags:      %X", sector->flags);
+                    if (ImGui::InputScalar("z_ceil", ImGuiDataType_Float, (void*)(&sector->z_ceil),
+                                           (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
+                        sector->z_ceil = std::max(sector->z_ceil, sector->z_floor);
+                    }
+                    if (ImGui::InputScalar("z_floor", ImGuiDataType_Float, &sector->z_floor,
+                                           (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
+                        sector->z_floor = std::min(sector->z_floor, sector->z_ceil);
+                    }
                 }
 
                 ImGui::End();
