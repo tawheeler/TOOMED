@@ -1,3 +1,8 @@
+// TODO: Make it easy to add a new edge by:
+//   1. Having selected edge panel contain content even if no side info exists
+//   2. Giving the option to switch selected edge direction in the selected edge panel
+//   3. Giving the option to create a side info in the panel
+
 #include <SDL2/SDL.h>
 
 #include <cstdint>
@@ -85,6 +90,30 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
 }
 
 // ------------------------------------------------------------------------------------------------
+void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int y_lower, int y_upper, int y_lo,
+                         int y_hi, f32 x_along_texture, u32 texture_x_offset, u32 texture_y_offset,
+                         const core::OldStyleBitmap& bitmap) {
+    u32 TEXTURE_SIZE = 64;  // TODO
+    f32 TILE_WIDTH = 1.0f;
+    f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
+
+    u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
+    u32 baseline = bitmap.GetColumnMajorPixelIndex(texture_x + texture_x_offset, texture_y_offset);
+
+    // TODO: Don't squish the texture. Instead
+    // assume it has a fixed resolution.
+    u32 denom = std::max(1, y_upper - y_lower);
+    f32 y_loc = (f32)((y_upper - y_hi) * TEXTURE_SIZE) / denom;
+    f32 y_step = (f32)(TEXTURE_SIZE) / denom;
+    for (int y = y_hi; y >= y_lo; y--) {
+        u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
+        u32 color = bitmap.abgr[texture_y + baseline];
+        pixels[(y * screen_size_x) + x] = color;
+        y_loc += y_step;
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
 void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
                         const core::GameMap& game_map, const core::OldStyleBitmap& bitmap) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
@@ -99,13 +128,10 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         return;
     }
 
-    f32 WALL_HEIGHT = 1.0f;
-    u32 TEXTURE_SIZE = 64;
-    f32 TILE_WIDTH = 1.0f;
-
     f32 half_screen_size = screen_size_y / 2.0f;
     f32 screen_size_y_over_fov_y = screen_size_y / camera_fov.y;
 
+    u32 TEXTURE_SIZE = 64;
     u32 color_ceil = 0xFF222222;
     u32 color_floor = 0xFF444444;
 
@@ -130,7 +156,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         common::Vec2f v_face = {0.0, 0.0};
 
         // Step through triangles until we hit a solid triangle
-        core::QuarterEdgeIndex qe_side_to_render = {core::kInvalidIndex};
         const core::SideInfo* side_info = nullptr;  // The side info we eventually hit.
 
         // f32 z_ceil = 999.0;                         // TODO: Use typemax
@@ -227,13 +252,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                         }
                     }
 
-                    // Render the texture in-between
-                    // TODO: Only do this if it exists
-                    while (y_hi > y_lower) {
-                        y_hi--;
-                        pixels[(y_hi * screen_size_x) + x] = 0x00FF00FF;
-                    }
-
                     // Render the floor below the lower texture
                     while (y_lo < y_floor) {
                         y_lo++;
@@ -248,9 +266,25 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                         }
                     }
 
-                    qe_side_to_render = qe_side;
+                    // Continue on with our projection if the side is passable.
+                    if ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0) {
+                        continue;
+                    }
 
-                    // The side info is solid.
+                    // The side info has a solid wall.
+                    // Calculate where along the segment we intersected.
+                    core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
+                    f32 x_along_texture =
+                        common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
+                    u32 texture_x_offset =
+                        (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
+                    u32 texture_y_offset = side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
+                    texture_x_offset += side_info->texture_info_middle.x_offset;
+                    texture_y_offset += side_info->texture_info_middle.y_offset;
+                    RenderTextureColumn(pixels, x, screen_size_x, y_lower, y_upper, y_lo, y_hi,
+                                        x_along_texture, texture_x_offset, texture_y_offset,
+                                        bitmap);
+
                     break;
                 }
 
@@ -262,36 +296,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                 break;
             }
         }
-
-        // // Texture x offset determines whether we draw the light or dark version
-        // core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
-
-        // u32 texture_x_offset = 0;
-        // u32 texture_y_offset = 0;
-        // if (side_info != nullptr) {
-        //     texture_x_offset = (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE :
-        //     0; texture_y_offset = side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
-        //     texture_x_offset += side_info->texture_info_middle.x_offset;
-        //     texture_y_offset += side_info->texture_info_middle.y_offset;
-        // }
-
-        // // Calculate where along the segment we intersected.
-        // f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
-        // f32 x_along_texture =
-        //     common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
-
-        // u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
-        // u32 baseline =
-        //     bitmap.GetColumnMajorPixelIndex(texture_x + texture_x_offset, texture_y_offset);
-        // u32 denom = std::max(1, y_hi - y_lo);
-        // f32 y_loc = (f32)((y_hi - y_hi_capped) * TEXTURE_SIZE) / denom;
-        // f32 y_step = (f32)(TEXTURE_SIZE) / denom;
-        // for (int y = y_hi_capped; y >= y_lo_capped; y--) {
-        //     u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
-        //     u32 color = bitmap.abgr[texture_y + baseline];
-        //     pixels[(y * screen_size_x) + x] = color;
-        //     y_loc += y_step;
-        // }
     }
 }
 
@@ -655,10 +659,14 @@ int main() {
 
         {  // Render all side_infos (these are directed)
             auto renderer = editor_window_data.renderer;
-            SetColor(renderer, color_light_gray);
 
             const core::DelaunayMesh& mesh = map.GetMesh();
             for (const auto& it : map.GetSideInfos()) {
+                SetColor(renderer, color_light_gray);
+                if ((it.second.flags & core::kSideInfoFlag_PASSABLE) > 0) {
+                    SetColor(renderer, 0x9090C0FF);
+                }
+
                 core::QuarterEdgeIndex qe = it.second.qe;
                 const common::Vec2f& a = mesh.GetVertex(qe);
                 const common::Vec2f& b = mesh.GetVertex(mesh.Sym(qe));
@@ -808,11 +816,14 @@ int main() {
                 ImGui::Begin("SideInfo");
                 ImGui::Text("index:      %lu", selected_edge_index.i);
                 ImGui::Separator();
-                ImGui::Text("IsDark: ");
-                ImGui::SameLine();
-                if (ImGui::Button(
-                        ((side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "TRUE" : "FALSE"))) {
+                if (ImGui::Button((
+                        (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "Dark" : "Not Dark"))) {
                     side_info->flags ^= core::kSideInfoFlag_DARK;  // toggle
+                }
+                if (ImGui::Button(((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0
+                                       ? "Passable"
+                                       : "Not Passable"))) {
+                    side_info->flags ^= core::kSideInfoFlag_PASSABLE;  // toggle
                 }
 
                 ImGui::Text("flags:      %X", side_info->flags);
