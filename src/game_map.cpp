@@ -58,14 +58,6 @@ SideInfo* GameMap::GetEditableSideInfo(QuarterEdgeIndex qe_primal) {
     }
     return &(it->second);
 }
-// ------------------------------------------------------------------------------------------------
-FaceInfo* GameMap::GetEditableFaceInfo(QuarterEdgeIndex qe_dual) {
-    auto it = face_infos_.find(qe_dual);
-    if (it == face_infos_.end()) {
-        return nullptr;
-    }
-    return &(it->second);
-}
 
 // ------------------------------------------------------------------------------------------------
 VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
@@ -150,31 +142,6 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
 
 //     return true;
 // }
-
-// ------------------------------------------------------------------------------------------------
-bool GameMap::AddFaceInfo(QuarterEdgeIndex qe_dual) {
-    if (!mesh_.IsDual(qe_dual)) {
-        return false;
-    }
-
-    auto it = face_infos_.find(qe_dual);
-    if (it != face_infos_.end()) {
-        return false;
-    }
-
-    FaceInfo face_info = {};
-    face_info.qe = qe_dual;
-
-    face_infos_[qe_dual] = (face_info);
-    QuarterEdgeIndex qe = mesh_.Next(qe_dual);
-    while (qe != qe_dual) {
-        face_info.qe = qe;
-        face_infos_[qe] = (face_info);
-        qe = mesh_.Next(qe);
-    }
-
-    return true;
-}
 
 // ------------------------------------------------------------------------------------------------
 void GameMap::MoveVertexToward(QuarterEdgeIndex qe_primal, const common::Vec2f& pos) {
@@ -357,6 +324,10 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
         side_info.texture_info_middle.texture_id = exported_side_info.texture_id;
         side_info.texture_info_middle.x_offset = exported_side_info.x_offset;
         side_info.texture_info_middle.y_offset = exported_side_info.y_offset;
+        side_info.z_floor = 0.0;
+        side_info.z_lower = 0.2;
+        side_info.z_upper = 0.8;
+        side_info.z_ceil = 1.0;
         // NOTE: quarter edge index not yet set.
 
         side_infos.emplace_back(side_info);

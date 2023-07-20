@@ -29,23 +29,22 @@ constexpr u16 kSideInfoFlag_DARK = 1;
 // The information associated with one side of an edge between vertices in the map.
 // If this represents the directed edge A->B, then it describes the edge viewed on the right
 // side of A->B.
+
+// A solid sideinfo does not set its lower or upper texture, and thus only has the middle
+// texture, z_floor, and z_ceil.
+
+// A floor height change sideinfo has no middle texture, and thus has a lower and/or upper texture.
+
 struct SideInfo {
     u16 flags;
-    TextureInfo texture_info_lower;   // Texture displayed if the floor height increases.
-    TextureInfo texture_info_middle;  // Texture displayed if the wall is solid.
-    TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases.
-    QuarterEdgeIndex qe;              // The primary quarter edge that represents A->B
-};
-
-constexpr u16 kFaceInfoFlag_SOLID = 1;
-
-// The information associated with one face in the map, represented by any dual quarter edge.
-// (All dual quarter edges originated from the same face will be associated with the same FaceInfo).
-struct FaceInfo {
-    u16 flags;
-    f32 z_floor;          // The floor height for this face
-    f32 z_ceil;           // The ceiling height for this face (>= z_floor)
-    QuarterEdgeIndex qe;  // The dual quarter edge that originates at this face
+    TextureInfo texture_info_lower;   // Texture displayed if the floor height increases
+    TextureInfo texture_info_middle;  // Texture displayed if the wall is solid
+    TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases
+    f32 z_floor;  // Height of the floor on the side the edge is viewed from (right of A->B)
+    f32 z_lower;  // Height of the boundary between the lower and middle texture
+    f32 z_upper;  // Height of the boundary between the middle and upper texture
+    f32 z_ceil;   // Height of the ceiling on the side the edge is viewed from (right of A-B)
+    QuarterEdgeIndex qe;  // The primary quarter edge that represents A->B
 };
 
 // Represents our game map
@@ -58,13 +57,9 @@ class GameMap {
     void Clear();
 
     const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
-    const std::map<QuarterEdgeIndex, FaceInfo>& GetFaceInfos() const { return face_infos_; };
 
     // Returns a pointer to the corresponding side info, or nullptr if it does not exist.
     SideInfo* GetEditableSideInfo(QuarterEdgeIndex qe_primal);
-
-    // Returns a pointer to the corresponding face info, or nullptr if it does not exist.
-    FaceInfo* GetEditableFaceInfo(QuarterEdgeIndex qe_dual);
 
     // // Whether the given edge exists
     // bool HasEdge(int a_ind, int b_ind) const;
@@ -125,12 +120,6 @@ class GameMap {
     // Only primal quarter edges should ever be associated with side_infos.
     // Any edges that do not have side infos are simply transparent.
     std::map<QuarterEdgeIndex, SideInfo> side_infos_;
-
-    // All of the map-related face information.
-    // Only dual quarter edges should ever be associated with face_infos.
-    // TODO: This is wrong, as we need to associate only one qe per face, otherwise we get multiple
-    // copies.
-    std::map<QuarterEdgeIndex, FaceInfo> face_infos_;
 };
 
 }  // namespace core

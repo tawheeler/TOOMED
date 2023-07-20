@@ -103,6 +103,12 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
     u32 TEXTURE_SIZE = 64;
     f32 TILE_WIDTH = 1.0f;
 
+    f32 half_screen_size = screen_size_y / 2.0f;
+    f32 screen_size_y_over_fov_y = screen_size_y / camera_fov.y;
+
+    u32 color_ceil = 0xFF222222;
+    u32 color_floor = 0xFF444444;
+
     for (int x = 0; x < screen_size_x; x++) {
         // Camera to pixel column
         const f32 dw =
@@ -127,6 +133,11 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         core::QuarterEdgeIndex qe_side_to_render = {core::kInvalidIndex};
         const core::SideInfo* side_info = nullptr;  // The side info we eventually hit.
 
+        // f32 z_ceil = 999.0;                         // TODO: Use typemax
+        // f32 z_floor = -999.0;                       // TODO: Use typemax
+        int y_hi = screen_size_y;
+        int y_lo = -1;
+
         int n_steps = 0;
         while (n_steps < 100) {
             n_steps += 1;
@@ -145,7 +156,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
             f32 min_interp = INFINITY;
             core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
-            core::QuarterEdgeIndex qe_dual_next = {core::kInvalidIndex};
 
             // See if we cross any of the 3 faces for the triangle we are in,
             // and cross the first segment.
@@ -157,7 +167,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                 float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
                 if (interp_ab < min_interp) {
                     min_interp = interp_ab;
-                    qe_dual_next = mesh.Rot(qe_ab);
                     qe_side = qe_ab;
                     v_face = v;
                 }
@@ -169,7 +178,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                 float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
                 if (interp_bc < min_interp) {
                     min_interp = interp_bc;
-                    qe_dual_next = mesh.Rot(qe_bc);
                     qe_side = qe_bc;
                     v_face = v;
                 }
@@ -181,38 +189,67 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                 float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
                 if (interp_ca < min_interp) {
                     min_interp = interp_ca;
-                    qe_dual_next = mesh.Rot(qe_ca);
                     qe_side = qe_ca;
                     v_face = v;
                 }
             }
 
             // Move to the face.
-            if (core::IsValid(qe_dual_next)) {
+            if (core::IsValid(qe_side)) {
                 // Should always be non-null.
                 pos += min_interp * pos_next_delta;
-                qe_dual = qe_dual_next;
-
-                // // Render the ceiling above the threshold.
-                // // Calculate the ray length
-                // const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
-
-                // // Calculate the pixel bounds that we fill the wall in for
-                // int y_hi = (int)(screen_size_y / 2.0f + cam_len * (WALL_HEIGHT - camera_z) /
-                //                                             ray_len * screen_size_y /
-                //                                             camera_fov.y);
-                // for (int y = y_hi + 1; y < screen_size_y; y++) {
-                //     u32 color = 0x345678FF;
-                //     pixels[(y * screen_size_x) + x] = color;
-                // }
-
-                // // TODO: Render floor
+                qe_dual = mesh.Rot(qe_side);  // The next face
 
                 auto it = game_map.GetSideInfos().find(qe_side);
                 if (it != game_map.GetSideInfos().end()) {
                     side_info = &(it->second);
+
+                    const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
+                    const f32 gamma = cam_len / ray_len * screen_size_y_over_fov_y;
+                    wall_raycast_radius[x] = ray_len;
+
+                    int y_ceil = (int)(half_screen_size + gamma * (side_info->z_ceil - camera_z));
+                    int y_upper = (int)(half_screen_size + gamma * (side_info->z_upper - camera_z));
+                    int y_lower = (int)(half_screen_size + gamma * (side_info->z_lower - camera_z));
+                    int y_floor = (int)(half_screen_size + gamma * (side_info->z_floor - camera_z));
+
+                    // Render the ceiling above the upper texture
+                    while (y_hi > y_ceil) {
+                        y_hi--;
+                        pixels[(y_hi * screen_size_x) + x] = color_ceil;
+                    }
+
+                    // Render the upper texture
+                    if (y_upper < y_hi) {
+                        while (y_hi > y_upper) {
+                            y_hi--;
+                            pixels[(y_hi * screen_size_x) + x] = 0xFF0000FF;
+                        }
+                    }
+
+                    // Render the texture in-between
+                    // TODO: Only do this if it exists
+                    while (y_hi > y_lower) {
+                        y_hi--;
+                        pixels[(y_hi * screen_size_x) + x] = 0x00FF00FF;
+                    }
+
+                    // Render the floor below the lower texture
+                    while (y_lo < y_floor) {
+                        y_lo++;
+                        pixels[(y_lo * screen_size_x) + x] = color_floor;
+                    }
+
+                    // Render the lower texture
+                    if (y_lower > y_lo) {
+                        while (y_lo < y_lower) {
+                            y_lo++;
+                            pixels[(y_lo * screen_size_x) + x] = 0x0000FFFF;
+                        }
+                    }
+
                     qe_side_to_render = qe_side;
-                    // TODO: game_map->side_infos[side_info_index].flags
+
                     // The side info is solid.
                     break;
                 }
@@ -226,68 +263,35 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
             }
         }
 
-        // Calculate the ray length
-        const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
-        wall_raycast_radius[x] = ray_len;
+        // // Texture x offset determines whether we draw the light or dark version
+        // core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
 
-        // Calculate the pixel bounds that we fill the wall in for
-        int y_lo = (int)(screen_size_y / 2.0f -
-                         cam_len * camera_z / ray_len * screen_size_y / camera_fov.y);
-        int y_hi = (int)(screen_size_y / 2.0f + cam_len * (WALL_HEIGHT - camera_z) / ray_len *
-                                                    screen_size_y / camera_fov.y);
-        int y_lo_capped = std::max(y_lo, 0);
-        int y_hi_capped = std::min(y_hi, screen_size_y - 1);
-
-        // Render the ceiling
-        u32 color_ceil = 0xFF222222;
-        for (int y = screen_size_y - 1; y > y_hi_capped; y--) {
-            pixels[(y * screen_size_x) + x] = color_ceil;
-        }
-
-        // Texture x offset determines whether we draw the light or dark version
-        core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
-
-        u32 texture_x_offset = 0;
-        u32 texture_y_offset = 0;
-        if (side_info != nullptr) {
-            texture_x_offset = (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
-            texture_y_offset = side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
-            texture_x_offset += side_info->texture_info_middle.x_offset;
-            texture_y_offset += side_info->texture_info_middle.y_offset;
-        }
-
-        // Calculate where along the segment we intersected.
-        f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
-        f32 x_along_texture =
-            common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
-
-        u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
-        u32 baseline =
-            bitmap.GetColumnMajorPixelIndex(texture_x + texture_x_offset, texture_y_offset);
-        u32 denom = std::max(1, y_hi - y_lo);
-        f32 y_loc = (f32)((y_hi - y_hi_capped) * TEXTURE_SIZE) / denom;
-        f32 y_step = (f32)(TEXTURE_SIZE) / denom;
-        for (int y = y_hi_capped; y >= y_lo_capped; y--) {
-            u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
-            u32 color = bitmap.abgr[texture_y + baseline];
-            pixels[(y * screen_size_x) + x] = color;
-            y_loc += y_step;
-        }
-
-        // u32 color_lo = 0x1311DD;
-        // u32 color_hi = 0x13DD11;
-        // f32 interpolant = std::min(ray_len, 10.0f) / 10.0;
-        // u32 color = color_lo + interpolant * (color_hi - color_lo);
-        // color |= 0xFF000000;
-        // for (int y = y_hi_capped; y >= y_lo_capped; y--) {
-        //     pixels[(y * screen_size_x) + x] = color;
+        // u32 texture_x_offset = 0;
+        // u32 texture_y_offset = 0;
+        // if (side_info != nullptr) {
+        //     texture_x_offset = (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE :
+        //     0; texture_y_offset = side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
+        //     texture_x_offset += side_info->texture_info_middle.x_offset;
+        //     texture_y_offset += side_info->texture_info_middle.y_offset;
         // }
 
-        // Render the floor
-        u32 color_floor = 0xFF444444;
-        for (int y = y_lo_capped - 1; y >= 0; y--) {
-            pixels[(y * screen_size_x) + x] = color_floor;
-        }
+        // // Calculate where along the segment we intersected.
+        // f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
+        // f32 x_along_texture =
+        //     common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
+
+        // u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
+        // u32 baseline =
+        //     bitmap.GetColumnMajorPixelIndex(texture_x + texture_x_offset, texture_y_offset);
+        // u32 denom = std::max(1, y_hi - y_lo);
+        // f32 y_loc = (f32)((y_hi - y_hi_capped) * TEXTURE_SIZE) / denom;
+        // f32 y_step = (f32)(TEXTURE_SIZE) / denom;
+        // for (int y = y_hi_capped; y >= y_lo_capped; y--) {
+        //     u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
+        //     u32 color = bitmap.abgr[texture_y + baseline];
+        //     pixels[(y * screen_size_x) + x] = color;
+        //     y_loc += y_step;
+        // }
     }
 }
 
@@ -466,25 +470,15 @@ int main() {
                         camera_pos_at_mouse_click = camera_pos;
 
                         // Check for a selected vertex near the current mouse position
+                        selected_edge_index = {core::kInvalidIndex};
                         selected_vertex_index =
                             map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
 
                         // Check for a selected edge near the current mouse position if we did not
                         // select a vertex
-                        selected_edge_index = {core::kInvalidIndex};
                         if (!IsValid(selected_vertex_index)) {
                             selected_edge_index =
                                 map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
-                        }
-
-                        // TODO: Remove me.
-                        // Make the containing face solid if we did not select an edge either
-                        if (!IsValid(selected_vertex_index) && !IsValid(selected_edge_index)) {
-                            map.AddFaceInfo(qe_mouse_face);
-                            core::FaceInfo* face_info = map.GetEditableFaceInfo(qe_mouse_face);
-                            if (face_info) {
-                                face_info->flags |= core::kFaceInfoFlag_SOLID;
-                            }
                         }
                     }
                 } else if (event.button.button == SDL_BUTTON_MIDDLE) {
@@ -625,43 +619,6 @@ int main() {
 
             RenderGrid(renderer, color_light_background, major_line_spacing, camera_pos,
                        camera_zoom);
-        }
-
-        {  // Render all solid faces
-            auto renderer = editor_window_data.renderer;
-            const core::DelaunayMesh& mesh = map.GetMesh();
-
-            for (const auto& it : map.GetFaceInfos()) {
-                core::QuarterEdgeIndex qe = it.second.qe;
-
-                // Fill enclosing triangle
-                const auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe);
-                const common::Vec2f& a = mesh.GetVertex(qe_ab);
-                const common::Vec2f& b = mesh.GetVertex(qe_bc);
-                const common::Vec2f& c = mesh.GetVertex(qe_ca);
-
-                auto a_cam = GlobalToCamera(a, camera_pos, camera_zoom);
-                auto b_cam = GlobalToCamera(b, camera_pos, camera_zoom);
-                auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
-
-                SDL_Vertex triangle[3];
-                triangle[0] = {
-                    SDL_FPoint{a_cam.x, a_cam.y},
-                    SDL_Color{55, 55, 77, 100},
-                    SDL_FPoint{0},
-                };
-                triangle[1] = {
-                    SDL_FPoint{b_cam.x, b_cam.y},
-                    SDL_Color{55, 55, 77, 100},
-                    SDL_FPoint{0},
-                };
-                triangle[2] = {
-                    SDL_FPoint{c_cam.x, c_cam.y},
-                    SDL_Color{55, 55, 77, 100},
-                    SDL_FPoint{0},
-                };
-                SDL_RenderGeometry(renderer, nullptr, triangle, 3, nullptr, 0);
-            }
         }
 
         {  // Render the mesh
@@ -863,6 +820,7 @@ int main() {
                 int flags = 0;
                 u16 step_u16 = 1;
                 i16 step_i16 = 1;
+                f32 step_f32 = 0.1f;
 
                 ImGui::Separator();
                 if (ImGui::InputScalar("upper texture_id", ImGuiDataType_U16,
@@ -912,6 +870,26 @@ int main() {
                 ImGui::InputScalar("lower y_offset", ImGuiDataType_S16,
                                    (void*)(&side_info->texture_info_lower.y_offset),
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
+
+                ImGui::Separator();
+                if (ImGui::InputScalar("z_ceil", ImGuiDataType_Float, (void*)(&side_info->z_ceil),
+                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
+                    side_info->z_ceil = std::max(side_info->z_ceil, side_info->z_upper);
+                }
+                if (ImGui::InputScalar("z_upper", ImGuiDataType_Float, (void*)(&side_info->z_upper),
+                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
+                    side_info->z_upper =
+                        std::clamp(side_info->z_upper, side_info->z_lower, side_info->z_ceil);
+                }
+                if (ImGui::InputScalar("z_lower", ImGuiDataType_Float, (void*)(&side_info->z_lower),
+                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
+                    side_info->z_lower =
+                        std::clamp(side_info->z_lower, side_info->z_floor, side_info->z_upper);
+                }
+                if (ImGui::InputScalar("z_floor", ImGuiDataType_Float, &side_info->z_floor,
+                                       (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
+                    side_info->z_floor = std::min(side_info->z_floor, side_info->z_lower);
+                }
 
                 ImGui::End();
             }
