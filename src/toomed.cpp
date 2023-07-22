@@ -19,6 +19,7 @@
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
+#include "input.hpp"
 #include "math_utils.hpp"
 #include "palette.hpp"
 #include "typedefs.hpp"
@@ -40,12 +41,39 @@ struct CameraState {
     common::Vec2f pos;
     common::Vec2f dir;
     common::Vec2f vel;
-    f32 z;  // height above the floor
+    f32 height;  // height above the floor
+    f32 z;       // absolute height in global
     f32 omega;
+    core::QuarterEdgeIndex qe;
 };
 
-void MoveCamera(CameraState* camera_state, f32 dt, const common::Vec2f& input_dir,
-                int input_rot_dir) {
+void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_state,
+                const core::GameMap& game_map, f32 dt) {
+    // ------------------------------------------------------------
+    // Process Input
+    common::Vec2f input_dir = {0.0,
+                               0.0};  // In the body frame, which is right-handed, so y points left.
+    if (IsPressed(keyboard_state.w)) {
+        input_dir.x += 1.0;
+    }
+    if (IsPressed(keyboard_state.s)) {
+        input_dir.x -= 1.0;
+    }
+    if (IsPressed(keyboard_state.d)) {
+        input_dir.y -= 1.0;
+    }
+    if (IsPressed(keyboard_state.a)) {
+        input_dir.y += 1.0;
+    }
+
+    int input_rot_dir = 0;  // Right-hand rotation in plane (CCW)
+    if (IsPressed(keyboard_state.q)) {
+        input_rot_dir += 1;
+    }
+    if (IsPressed(keyboard_state.e)) {
+        input_rot_dir -= 1;
+    }
+
     // ------------------------------------------------------------
     // Update the velocity and angular speed
     const f32 kPlayerInputAccel = 6.5;
@@ -76,7 +104,20 @@ void MoveCamera(CameraState* camera_state, f32 dt, const common::Vec2f& input_di
 
     // ------------------------------------------------------------
     // Move the player. Ignore collisions for now.
+    const core::DelaunayMesh& mesh = game_map.GetMesh();
     camera_state->pos += dt * camera_state->vel;
+    camera_state->qe = mesh.GetEnclosingTriangle(camera_state->pos, camera_state->qe);
+
+    // Update height
+    const core::SideInfo* side_info = game_map.GetSideInfo(mesh.Rot(camera_state->qe));
+    if (side_info != nullptr) {
+        const core::Sector* sector = game_map.GetSector(side_info->sector_id);
+        ASSERT(sector, "sector is null!");
+        camera_state->z = camera_state->height + sector->z_floor;
+    } else {
+        // TODO: Remove.
+        camera_state->z = camera_state->height;
+    }
 
     // Update the camera's rotational heading
     f32 theta = atan2(camera_state->dir.y, camera_state->dir.x);
@@ -177,8 +218,7 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
     // Camera data
     common::Vec2f camera_fov = {1.5, 0.84375};
-    core::QuarterEdgeIndex qe_camera = mesh.GetEnclosingTriangle(camera.pos);
-    if (!core::IsValid(qe_camera)) {
+    if (!core::IsValid(camera.qe)) {
         return;
     }
 
@@ -203,8 +243,8 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         const common::Vec2f dir = cp / cam_len;
 
         // Start at the camera pos
-        core::QuarterEdgeIndex qe_dual = qe_camera;
         common::Vec2f pos = camera.pos;
+        core::QuarterEdgeIndex qe_dual = camera.qe;
 
         // The edge vector of the face that we last crossed
         common::Vec2f v_face = {0.0, 0.0};
@@ -510,11 +550,14 @@ int main() {
     core::QuarterEdgeIndex selected_vertex_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
+    core::KeyBoardState keyboard_state;
+    core::ClearKeyboardState(&keyboard_state);
 
-    CameraState camera_state = {};
-    camera_state.pos = {5.0, 5.0};
-    camera_state.dir = {1.0, 0.0};
-    camera_state.z = 0.4f;
+    CameraState player_cam = {};
+    player_cam.pos = {5.0, 5.0};
+    player_cam.dir = {1.0, 0.0};
+    player_cam.height = 0.4f;
+    player_cam.qe = map.GetMesh().GetEnclosingTriangle(player_cam.pos);
 
     // Player view data
     u32 player_view_pixels[player_window_data.screen_size_x *
@@ -533,8 +576,6 @@ int main() {
         // Generally you may always pass all inputs to dear imgui, and hide them from your
         // application based on those two flags.
         SDL_Event event;
-        common::Vec2f input_dir = {};
-        int input_rot_dir = 0;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT) {
@@ -638,17 +679,17 @@ int main() {
                 if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
                 } else if (event.key.keysym.sym == SDLK_w) {
-                    input_dir.x += 1.0;
+                    keyboard_state.w = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_s) {
-                    input_dir.x -= 1.0;
+                    keyboard_state.s = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_d) {
-                    input_dir.y -= 1.0;
+                    keyboard_state.d = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_a) {
-                    input_dir.y += 1.0;
+                    keyboard_state.a = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_q) {
-                    input_rot_dir += 1;
+                    keyboard_state.q = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_e) {
-                    input_rot_dir -= 1;
+                    keyboard_state.e = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_DELETE) {
                     // Delete key pressed!
                     if (core::IsValid(selected_vertex_index)) {
@@ -662,6 +703,20 @@ int main() {
                         // map.RemoveDirectedEdge(*selected_edge_index);
                         selected_edge_index = {core::kInvalidIndex};
                     }
+                }
+            } else if (event.type == SDL_KEYUP && !io.WantCaptureKeyboard) {
+                if (event.key.keysym.sym == SDLK_w) {
+                    keyboard_state.w = core::KeyboardKeyState_Released;
+                } else if (event.key.keysym.sym == SDLK_s) {
+                    keyboard_state.s = core::KeyboardKeyState_Released;
+                } else if (event.key.keysym.sym == SDLK_d) {
+                    keyboard_state.d = core::KeyboardKeyState_Released;
+                } else if (event.key.keysym.sym == SDLK_a) {
+                    keyboard_state.a = core::KeyboardKeyState_Released;
+                } else if (event.key.keysym.sym == SDLK_q) {
+                    keyboard_state.q = core::KeyboardKeyState_Released;
+                } else if (event.key.keysym.sym == SDLK_e) {
+                    keyboard_state.e = core::KeyboardKeyState_Released;
                 }
             }
         }
@@ -880,11 +935,11 @@ int main() {
         {  // Render the player camera position
             auto renderer = editor_window_data.renderer;
 
-            auto dir_rotr = common::Rotr(camera_state.dir);
-            auto a_cam = GlobalToCamera(camera_state.pos, camera_pos, camera_zoom);
-            auto b_cam = GlobalToCamera(camera_state.pos + 0.5 * camera_state.dir - 0.4 * dir_rotr,
+            auto dir_rotr = common::Rotr(player_cam.dir);
+            auto a_cam = GlobalToCamera(player_cam.pos, camera_pos, camera_zoom);
+            auto b_cam = GlobalToCamera(player_cam.pos + 0.5 * player_cam.dir - 0.4 * dir_rotr,
                                         camera_pos, camera_zoom);
-            auto c_cam = GlobalToCamera(camera_state.pos + 0.5 * camera_state.dir + 0.4 * dir_rotr,
+            auto c_cam = GlobalToCamera(player_cam.pos + 0.5 * player_cam.dir + 0.4 * dir_rotr,
                                         camera_pos, camera_zoom);
 
             SDL_Vertex triangle[3];
@@ -1075,18 +1130,21 @@ int main() {
         {
             // Update the camera
             f32 dt = 1.0f / 30.0f;  // TODO
-            MoveCamera(&camera_state, dt, input_dir, input_rot_dir);
+            MoveCamera(&player_cam, keyboard_state, map, dt);
 
             // Render the player view.
             RenderWallsViaMesh(player_view_pixels, wall_raycast_radius,
                                player_window_data.screen_size_x, player_window_data.screen_size_y,
-                               map, camera_state, bitmap);
+                               map, player_cam, bitmap);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);
             SDL_RenderCopyEx(player_window_data.renderer, player_window_data.texture, NULL, NULL,
                              0.0, NULL, SDL_FLIP_VERTICAL);
         }
+
+        // Decay the keyboard state
+        DecayKeyboardState(&keyboard_state);
 
         // SDL_RENDERER_PRESENTVSYNC means this is syncronized with the monitor
         // refresh rate. (30Hz)
