@@ -877,6 +877,35 @@ int main() {
             }
         }
 
+        {  // Render the player camera position
+            auto renderer = editor_window_data.renderer;
+
+            auto dir_rotr = common::Rotr(camera_state.dir);
+            auto a_cam = GlobalToCamera(camera_state.pos, camera_pos, camera_zoom);
+            auto b_cam = GlobalToCamera(camera_state.pos + 0.5 * camera_state.dir - 0.4 * dir_rotr,
+                                        camera_pos, camera_zoom);
+            auto c_cam = GlobalToCamera(camera_state.pos + 0.5 * camera_state.dir + 0.4 * dir_rotr,
+                                        camera_pos, camera_zoom);
+
+            SDL_Vertex triangle[3];
+            triangle[0] = {
+                SDL_FPoint{a_cam.x, a_cam.y},
+                SDL_Color{155, 55, 55, 155},
+                SDL_FPoint{0},
+            };
+            triangle[1] = {
+                SDL_FPoint{b_cam.x, b_cam.y},
+                SDL_Color{155, 55, 55, 155},
+                SDL_FPoint{0},
+            };
+            triangle[2] = {
+                SDL_FPoint{c_cam.x, c_cam.y},
+                SDL_Color{155, 55, 55, 155},
+                SDL_FPoint{0},
+            };
+            SDL_RenderGeometry(renderer, nullptr, triangle, 3, nullptr, 0);
+        }
+
         // ------------------------------------------------------------------------------------------------
         // Start the Dear ImGui frame
         ImGui_ImplSDLRenderer2_NewFrame();
