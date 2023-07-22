@@ -61,6 +61,8 @@ class GameMap {
     // Empty the game map
     void Clear();
 
+    u16 GetMaxSectorIndex() const { return (u16)(sectors_.size()); }
+
     const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
 
     // Returns a pointer to the corresponding side info, or nullptr if it does not exist.
@@ -71,17 +73,13 @@ class GameMap {
     const Sector* GetSector(u16 sector_index) const;
     Sector* GetEditableSector(u16 sector_index);
 
-    // // Whether the given edge exists
-    // bool HasEdge(int a_ind, int b_ind) const;
-    // std::optional<usize> GetEdgeIndex(int a_ind, int b_ind) const;
-
     const core::DelaunayMesh& GetMesh() const { return mesh_; }
 
     // Insert a new vertex into the mesh.
     VertexIndex AddVertex(const common::Vec2f& pos);
 
-    // // Insert a directed edge into the game map, returning its index.
-    // usize AddDirectedEdge(int a_ind, int b_ind);
+    // Insert a sideinfo for a directed edge into the game map, returning whether it was successful.
+    bool AddSideInfo(QuarterEdgeIndex qe_primal);
 
     // // Remove a vertex (side_info). Can only be called if there are no ajoining sides.
     // // This action invalidates the mesh.

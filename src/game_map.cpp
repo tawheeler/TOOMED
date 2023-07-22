@@ -15,40 +15,19 @@ struct ExportedSideInfo {
 };
 
 // ------------------------------------------------------------------------------------------------
-GameMap::GameMap() : mesh_(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE) {}
+GameMap::GameMap() : mesh_(MESH_BOUNDING_RADIUS, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE) {
+    // Start off with a default sector (id 0)
+    Sector sector = {};
+    sector.z_floor = 0.0;
+    sector.z_ceil = 1.0;
+    sectors_.push_back(sector);
+}
 
 // ------------------------------------------------------------------------------------------------
 void GameMap::Clear() {
     mesh_.Clear();
     side_infos_.clear();
 }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// bool GameMap::HasEdge(int a_ind, int b_ind) const {
-//     auto tup = std::make_pair(a_ind, b_ind);
-//     return side_to_info_.find(tup) != side_to_info_.end();
-// }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// bool GameMap::HasMesh() const {
-//     if (mesh_) {
-//         return true;
-//     }
-//     return false;
-// };
-
-// //
-// ------------------------------------------------------------------------------------------------
-// std::optional<usize> GameMap::GetEdgeIndex(int a_ind, int b_ind) const {
-//     auto tup = std::make_pair(a_ind, b_ind);
-//     auto it = side_to_info_.find(tup);
-//     if (it != side_to_info_.end()) {
-//         return it->second;
-//     }
-//     return std::nullopt;
-// }
 
 // ------------------------------------------------------------------------------------------------
 const SideInfo* GameMap::GetSideInfo(QuarterEdgeIndex qe_primal) const {
@@ -100,6 +79,26 @@ VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {
 }
 
 // ------------------------------------------------------------------------------------------------
+bool GameMap::AddSideInfo(QuarterEdgeIndex qe_primal) {
+    if (!mesh_.IsPrimal(qe_primal)) {
+        return false;  // Only add side infos for primal quarter edges
+    }
+    if (side_infos_.find(qe_primal) != side_infos_.end()) {
+        return false;  // There already is one
+    }
+
+    // Ensure that the side is constrained.
+    mesh_.ConstrainEdge(qe_primal);
+
+    // Add a new sideinfo.
+    SideInfo side_info = {};
+    side_info.qe = qe_primal;
+    side_infos_[side_info.qe] = side_info;
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 u16 GameMap::AddSector() {
     u16 idx = sectors_.size();
     Sector sector = {};
@@ -108,29 +107,6 @@ u16 GameMap::AddSector() {
     sectors_.push_back(sector);
     return idx;
 }
-
-// //
-// ------------------------------------------------------------------------------------------------
-// usize GameMap::AddDirectedEdge(int a_ind, int b_ind) {
-//     usize side_info_index = side_infos_.size();
-//     SideInfo side_info;
-//     side_info.a_ind = a_ind;
-//     side_info.b_ind = b_ind;
-//     side_infos_.emplace_back(side_info);
-//     side_to_info_[std::make_pair(a_ind, b_ind)] = side_info_index;
-
-//     // Invalidate the mesh if this is not aleady an edge in our mesh.
-//     if (HasMesh()) {
-//         int mesh_ind_a = MapVertexIndexToMeshVertexIndex(a_ind);
-//         int mesh_ind_b = MapVertexIndexToMeshVertexIndex(b_ind);
-//         if (mesh_->GetQuarterEdge(mesh_ind_a, mesh_ind_b) == nullptr) {
-//             InvalidateMesh();
-//         }
-//     }
-
-//     // InvalidateMesh();  // We will need to re-generate the mesh
-//     return side_info_index;
-// }
 
 // //
 // ------------------------------------------------------------------------------------------------

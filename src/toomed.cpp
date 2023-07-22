@@ -1,7 +1,5 @@
 // TODO: Make it easy to add a new edge by:
-//   1. Having selected edge panel contain content even if no side info exists
 //   2. Giving the option to switch selected edge direction in the selected edge panel
-//   3. Giving the option to create a side info in the panel
 
 #include <SDL2/SDL.h>
 
@@ -36,6 +34,61 @@
         fprintf(stderr, __VA_ARGS__); \
         exit(1);                      \
     }
+
+// ------------------------------------------------------------------------------------------------
+struct CameraState {
+    common::Vec2f pos;
+    common::Vec2f dir;
+    common::Vec2f vel;
+    f32 z;  // height above the floor
+    f32 omega;
+};
+
+void MoveCamera(CameraState* camera_state, f32 dt, const common::Vec2f& input_dir,
+                int input_rot_dir) {
+    // ------------------------------------------------------------
+    // Update the velocity and angular speed
+    const f32 kPlayerInputAccel = 6.5;
+    const f32 kPlayerInputAngularAccel = 8.5;
+    const f32 kPlayerMaxSpeed = 5.0;
+    const f32 kPlayerMaxOmega = 5.0;
+    const f32 kAirFriction = 4.0;
+    const f32 kAirFrictionRot = 4.0;
+
+    // Note: Speed is in the global frame
+    camera_state->vel.x += (camera_state->dir.x * input_dir.x - camera_state->dir.y * input_dir.y) *
+                           kPlayerInputAccel * dt;
+    camera_state->vel.y += (camera_state->dir.y * input_dir.x + camera_state->dir.x * input_dir.y) *
+                           kPlayerInputAccel * dt;
+    camera_state->omega += input_rot_dir * kPlayerInputAngularAccel * dt;
+
+    // Clamp the velocity to a maximum magnitude
+    f32 speed = common::Norm(camera_state->vel);
+    if (speed > kPlayerMaxSpeed) {
+        camera_state->vel.x *= kPlayerMaxSpeed / speed;
+        camera_state->vel.y *= kPlayerMaxSpeed / speed;
+    }
+    if (camera_state->omega > kPlayerMaxOmega) {
+        camera_state->omega *= kPlayerMaxOmega / camera_state->omega;
+    } else if (camera_state->omega < -kPlayerMaxOmega) {
+        camera_state->omega *= -kPlayerMaxOmega / camera_state->omega;
+    }
+
+    // ------------------------------------------------------------
+    // Move the player. Ignore collisions for now.
+    camera_state->pos += dt * camera_state->vel;
+
+    // Update the camera's rotational heading
+    f32 theta = atan2(camera_state->dir.y, camera_state->dir.x);
+    theta += camera_state->omega * dt;
+    camera_state->dir = common::Vec2f(cos(theta), sin(theta));
+
+    // Apply air friction
+    f32 air_friction_decay = exp(-kAirFriction * dt);
+    camera_state->vel.x *= air_friction_decay;
+    camera_state->vel.y *= air_friction_decay;
+    camera_state->omega *= exp(-kAirFrictionRot * dt);
+}
 
 // ------------------------------------------------------------------------------------------------
 common::Vec2f GlobalToCamera(const common::Vec2f& g, const common::Vec2f& camera_pos,
@@ -105,9 +158,12 @@ void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int y_lower, int
     u32 denom = std::max(1, y_upper - y_lower);
     f32 y_loc = (f32)((y_upper - y_hi) * TEXTURE_SIZE) / denom;
     f32 y_step = (f32)(TEXTURE_SIZE) / denom;
-    for (int y = y_hi; y >= y_lo; y--) {
+    for (int y = y_hi - 1; y > y_lo; y--) {
         u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
         u32 color = bitmap.abgr[texture_y + baseline];
+        if ((y * screen_size_x) + x >= 360 * 720) {
+            std::cout << "bad!" << std::endl;
+        }
         pixels[(y * screen_size_x) + x] = color;
         y_loc += y_step;
     }
@@ -115,15 +171,13 @@ void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int y_lower, int
 
 // ------------------------------------------------------------------------------------------------
 void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
-                        const core::GameMap& game_map, const core::OldStyleBitmap& bitmap) {
+                        const core::GameMap& game_map, const CameraState& camera,
+                        const core::OldStyleBitmap& bitmap) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     // Camera data
     common::Vec2f camera_fov = {1.5, 0.84375};
-    common::Vec2f camera_pos = {5.0, 5.0};
-    common::Vec2f camera_dir = {1.0, 0.0};
-    f32 camera_z = 0.4f;
-    core::QuarterEdgeIndex qe_camera = mesh.GetEnclosingTriangle(camera_pos);
+    core::QuarterEdgeIndex qe_camera = mesh.GetEnclosingTriangle(camera.pos);
     if (!core::IsValid(qe_camera)) {
         return;
     }
@@ -139,8 +193,8 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
         // Camera to pixel column
         const f32 dw =
             camera_fov.x / 2 - (camera_fov.x * x) / screen_size_x;  // TODO: Precompute once.
-        const common::Vec2f cp = {camera_dir.x - dw * camera_dir.y,
-                                  camera_dir.y + dw * camera_dir.x};
+        const common::Vec2f cp = {camera.dir.x - dw * camera.dir.y,
+                                  camera.dir.y + dw * camera.dir.x};
 
         // Distance from the camera to the column
         const f32 cam_len = common::Norm(cp);
@@ -150,16 +204,12 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
         // Start at the camera pos
         core::QuarterEdgeIndex qe_dual = qe_camera;
-        common::Vec2f pos = camera_pos;
+        common::Vec2f pos = camera.pos;
 
         // The edge vector of the face that we last crossed
         common::Vec2f v_face = {0.0, 0.0};
 
         // Step through triangles until we hit a solid triangle
-        const core::SideInfo* side_info = nullptr;  // The side info we eventually hit.
-
-        // f32 z_ceil = 999.0;                         // TODO: Use typemax
-        // f32 z_floor = -999.0;                       // TODO: Use typemax
         int y_hi = screen_size_y;
         int y_lo = -1;
 
@@ -227,7 +277,7 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
                 const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
                 if (side_info != nullptr) {
-                    const f32 ray_len = std::max(common::Norm(pos - camera_pos), 0.01f);
+                    const f32 ray_len = std::max(common::Norm(pos - camera.pos), 0.01f);
                     const f32 gamma = cam_len / ray_len * screen_size_y_over_fov_y;
                     wall_raycast_radius[x] = ray_len;
 
@@ -244,10 +294,30 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                         z_floor = sector->z_floor;
                     }
 
-                    int y_ceil = (int)(half_screen_size + gamma * (z_ceil - camera_z));
-                    int y_upper = (int)(half_screen_size + gamma * (z_upper - camera_z));
-                    int y_lower = (int)(half_screen_size + gamma * (z_lower - camera_z));
-                    int y_floor = (int)(half_screen_size + gamma * (z_floor - camera_z));
+                    // Get the height on the other side, if it is passable.
+                    const bool is_passable =
+                        ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
+                    if (is_passable) {
+                        core::QuarterEdgeIndex qe_sym = mesh.Sym(qe_side);
+                        const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
+                        if (side_info_sym != nullptr) {
+                            const core::Sector* sector_sym =
+                                game_map.GetSector(side_info_sym->sector_id);
+                            if (sector_sym != nullptr) {
+                                z_lower = sector_sym->z_floor;
+                                z_upper = sector_sym->z_ceil;
+                            } else {
+                                std::cout << "Unexpected nullptr side_info_sym!" << std::endl;
+                            }
+                        } else {
+                            std::cout << "Unexpected nullptr qe_sym!" << std::endl;
+                        }
+                    }
+
+                    int y_ceil = (int)(half_screen_size + gamma * (z_ceil - camera.z));
+                    int y_upper = (int)(half_screen_size + gamma * (z_upper - camera.z));
+                    int y_lower = (int)(half_screen_size + gamma * (z_lower - camera.z));
+                    int y_floor = (int)(half_screen_size + gamma * (z_floor - camera.z));
 
                     // Render the ceiling above the upper texture
                     while (y_hi > y_ceil) {
@@ -278,7 +348,7 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                     }
 
                     // Continue on with our projection if the side is passable.
-                    if ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0) {
+                    if (is_passable) {
                         continue;
                     }
 
@@ -441,6 +511,11 @@ int main() {
     core::QuarterEdgeIndex selected_edge_index = {core::kInvalidIndex};
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
 
+    CameraState camera_state = {};
+    camera_state.pos = {5.0, 5.0};
+    camera_state.dir = {1.0, 0.0};
+    camera_state.z = 0.4f;
+
     // Player view data
     u32 player_view_pixels[player_window_data.screen_size_x *
                            player_window_data.screen_size_y];  // row-major
@@ -458,6 +533,8 @@ int main() {
         // Generally you may always pass all inputs to dear imgui, and hide them from your
         // application based on those two flags.
         SDL_Event event;
+        common::Vec2f input_dir = {};
+        int input_rot_dir = 0;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT) {
@@ -555,10 +632,23 @@ int main() {
                 }
 
             } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
-                if (event.key.keysym.sym == SDLK_e) {
-                    ExportGameData(map);
-                } else if (event.key.keysym.sym == SDLK_i) {
+                // if (event.key.keysym.sym == SDLK_e) {
+                //     ExportGameData(map);
+                // } else
+                if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
+                } else if (event.key.keysym.sym == SDLK_w) {
+                    input_dir.x += 1.0;
+                } else if (event.key.keysym.sym == SDLK_s) {
+                    input_dir.x -= 1.0;
+                } else if (event.key.keysym.sym == SDLK_d) {
+                    input_dir.y -= 1.0;
+                } else if (event.key.keysym.sym == SDLK_a) {
+                    input_dir.y += 1.0;
+                } else if (event.key.keysym.sym == SDLK_q) {
+                    input_rot_dir += 1;
+                } else if (event.key.keysym.sym == SDLK_e) {
+                    input_rot_dir -= 1;
                 } else if (event.key.keysym.sym == SDLK_DELETE) {
                     // Delete key pressed!
                     if (core::IsValid(selected_vertex_index)) {
@@ -688,7 +778,7 @@ int main() {
                                    (int)(b_cam.y));
 
                 common::Vec2f c = (a + b) / 2.0;
-                common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
+                common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.1;
                 auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
                 auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
                 SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
@@ -742,15 +832,15 @@ int main() {
                                (int)(b_cam.y));
 
             // Draw a little extra tick mark for directed edges
-            // common::Vec2f c = (a + b) / 2.0;
-            // common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.2;
-            // auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
-            // auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
-            // SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
-            //                    (int)(d_cam.y));
+            common::Vec2f c = (a + b) / 2.0;
+            common::Vec2f d = c + Rotr(Normalize(b - a)) * 0.1;
+            auto c_cam = GlobalToCamera(c, camera_pos, camera_zoom);
+            auto d_cam = GlobalToCamera(d, camera_pos, camera_zoom);
+            SDL_RenderDrawLine(renderer, (int)(c_cam.x), (int)(c_cam.y), (int)(d_cam.x),
+                               (int)(d_cam.y));
         }
 
-        if (core::IsValid(selected_vertex_index)) {
+        if (IsValid(selected_vertex_index)) {
             // Render our selected vertex
             auto renderer = editor_window_data.renderer;
             const core::DelaunayMesh& mesh = map.GetMesh();
@@ -822,11 +912,25 @@ int main() {
 
         // Side Info panel
         if (core::IsValid(selected_edge_index)) {
+            ImGui::Begin("SideInfo");
+
+            // Present the option to switch side infos
+            ImGui::Text("index:      %lu", selected_edge_index.i);
+            if (ImGui::Button("prev")) {
+                selected_edge_index = map.GetMesh().Prev(selected_edge_index);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("next")) {
+                selected_edge_index = map.GetMesh().Next(selected_edge_index);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("sym")) {
+                selected_edge_index = map.GetMesh().Sym(selected_edge_index);
+            }
+            ImGui::Separator();
+
             core::SideInfo* side_info = map.GetEditableSideInfo(selected_edge_index);
             if (side_info != nullptr) {
-                ImGui::Begin("SideInfo");
-                ImGui::Text("index:      %lu", selected_edge_index.i);
-                ImGui::Separator();
                 if (ImGui::Button((
                         (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "Dark" : "Not Dark"))) {
                     side_info->flags ^= core::kSideInfoFlag_DARK;  // toggle
@@ -895,7 +999,19 @@ int main() {
 
                 ImGui::Separator();
 
-                ImGui::Text("sector index:      %lu", side_info->sector_id);
+                if (ImGui::InputScalar("sector index", ImGuiDataType_U16,
+                                       (void*)(&side_info->sector_id), (void*)(&step_u16),
+                                       (void*)(NULL), "%d", flags)) {
+                    // Ensure that it lies in bounds
+                    if (side_info->sector_id > map.GetMaxSectorIndex()) {
+                        side_info->sector_id = map.GetMaxSectorIndex();
+                    }
+                }
+                if (ImGui::Button("New sector index")) {
+                    u16 sector_index = map.AddSector();
+                    side_info->sector_id = sector_index;
+                }
+
                 core::Sector* sector = map.GetEditableSector(side_info->sector_id);
                 if (sector == nullptr) {
                     ImGui::Text("SECTOR INDEX IS INVALID");
@@ -911,8 +1027,13 @@ int main() {
                     }
                 }
 
-                ImGui::End();
+            } else {
+                ImGui::Text("there is no sideinfo for this edge");
+                if (ImGui::Button("Create SideInfo")) {
+                    map.AddSideInfo(selected_edge_index);
+                }
             }
+            ImGui::End();
         }
 
         // ImGUI Rendering
@@ -923,10 +1044,14 @@ int main() {
 
         // ------------------------------------------------------------------------------------------------
         {
+            // Update the camera
+            f32 dt = 1.0f / 30.0f;  // TODO
+            MoveCamera(&camera_state, dt, input_dir, input_rot_dir);
+
             // Render the player view.
             RenderWallsViaMesh(player_view_pixels, wall_raycast_radius,
                                player_window_data.screen_size_x, player_window_data.screen_size_y,
-                               map, bitmap);
+                               map, camera_state, bitmap);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);
