@@ -1,6 +1,3 @@
-// TODO: Make it easy to add a new edge by:
-//   2. Giving the option to switch selected edge direction in the selected edge panel
-
 #include <SDL2/SDL.h>
 
 #include <cstdint>
@@ -996,6 +993,8 @@ int main() {
 
         // Side Info panel
         if (core::IsValid(selected_edge_index)) {
+            const core::DelaunayMesh& mesh = map.GetMesh();
+
             ImGui::Begin("SideInfo");
 
             // Present the option to switch side infos
@@ -1023,6 +1022,14 @@ int main() {
                                        ? "Passable"
                                        : "Not Passable"))) {
                     side_info->flags ^= core::kSideInfoFlag_PASSABLE;  // toggle
+
+                    // If we set it to passable, ensure that the opposite side is also a passable
+                    // side info.
+                    if (side_info->flags & core::kSideInfoFlag_PASSABLE) {
+                        core::QuarterEdgeIndex qe_sym = mesh.Sym(selected_edge_index);
+                        map.AddSideInfo(qe_sym);
+                        map.GetEditableSideInfo(qe_sym)->flags |= core::kSideInfoFlag_PASSABLE;
+                    }
                 }
 
                 ImGui::Text("flags:      %X", side_info->flags);
@@ -1083,9 +1090,11 @@ int main() {
 
                 ImGui::Separator();
 
+                bool updated_sector_id = false;
                 if (ImGui::InputScalar("sector index", ImGuiDataType_U16,
                                        (void*)(&side_info->sector_id), (void*)(&step_u16),
                                        (void*)(NULL), "%d", flags)) {
+                    updated_sector_id = true;
                     // Ensure that it lies in bounds
                     if (side_info->sector_id > map.GetMaxSectorIndex()) {
                         side_info->sector_id = map.GetMaxSectorIndex();
@@ -1094,6 +1103,19 @@ int main() {
                 if (ImGui::Button("New sector index")) {
                     u16 sector_index = map.AddSector();
                     side_info->sector_id = sector_index;
+                    updated_sector_id = true;
+                }
+                if (updated_sector_id) {
+                    // Walk around the triangle and ensure all edges have the same sector id.
+                    core::QuarterEdgeIndex qe = mesh.Prev(mesh.Sym(selected_edge_index));
+                    while (qe != selected_edge_index) {
+                        core::SideInfo* side_info2 = map.GetEditableSideInfo(qe);
+                        if (side_info2 != nullptr) {
+                            side_info2->sector_id = side_info->sector_id;
+                        }
+
+                        qe = mesh.Prev(mesh.Sym(qe));
+                    }
                 }
 
                 core::Sector* sector = map.GetEditableSector(side_info->sector_id);
@@ -1114,7 +1136,16 @@ int main() {
             } else {
                 ImGui::Text("there is no sideinfo for this edge");
                 if (ImGui::Button("Create SideInfo")) {
-                    map.AddSideInfo(selected_edge_index);
+                    bool success = map.AddSideInfo(selected_edge_index);
+                    if (success) {
+                        // If we add a side info, check all edges on that triangle and make side
+                        // infos for them if there are not some already.
+                        core::QuarterEdgeIndex qe = mesh.Prev(mesh.Sym(selected_edge_index));
+                        while (qe != selected_edge_index) {
+                            map.AddSideInfo(qe);
+                            qe = mesh.Prev(mesh.Sym(qe));
+                        }
+                    }
                 }
             }
             ImGui::End();
