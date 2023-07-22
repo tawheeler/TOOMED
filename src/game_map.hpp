@@ -61,7 +61,7 @@ class GameMap {
     // Empty the game map
     void Clear();
 
-    u16 GetMaxSectorIndex() const { return (u16)(sectors_.size()); }
+    u16 GetMaxSectorIndex() const { return (u16)(sectors_.size() - 1); }
 
     const std::map<QuarterEdgeIndex, SideInfo>& GetSideInfos() const { return side_infos_; };
 

@@ -181,23 +181,39 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
 }
 
 // ------------------------------------------------------------------------------------------------
-void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int y_lower, int y_upper, int y_lo,
-                         int y_hi, f32 x_along_texture, u32 texture_x_offset, u32 texture_y_offset,
+void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int screen_size_y, int y_lower,
+                         int y_upper, int y_lo, int y_hi, f32 x_along_texture,
+                         u32 texture_x_offset_base, u32 texture_y_offset_base, u32 texture_size_x,
+                         u32 texture_size_y, u32 x_base_offset, u32 y_base_offset,
                          const core::OldStyleBitmap& bitmap) {
-    u32 TEXTURE_SIZE = 64;  // TODO
     f32 TILE_WIDTH = 1.0f;
-    f32 PIX_PER_DISTANCE = TEXTURE_SIZE / TILE_WIDTH;
+    f32 PIX_PER_DISTANCE = texture_size_x / TILE_WIDTH;
 
-    u32 texture_x = (int)(PIX_PER_DISTANCE * x_along_texture) % TEXTURE_SIZE;
-    u32 baseline = bitmap.GetColumnMajorPixelIndex(texture_x + texture_x_offset, texture_y_offset);
+    u32 texture_x = ((int)(PIX_PER_DISTANCE * x_along_texture) + x_base_offset) % texture_size_x +
+                    texture_x_offset_base;
+    u32 baseline = bitmap.GetColumnMajorPixelIndex(texture_x, texture_y_offset_base);
 
-    // TODO: Don't squish the texture. Instead
-    // assume it has a fixed resolution.
-    u32 denom = std::max(1, y_upper - y_lower);
-    f32 y_loc = (f32)((y_upper - y_hi) * TEXTURE_SIZE) / denom;
-    f32 y_step = (f32)(TEXTURE_SIZE) / denom;
+    // y_lower = screen y coordinate of bottom of column (can exceed screen bounds)
+    // y_upper = screen y coordinate of top of column (can exceed screen bounds)
+    // y_lo    = screen y coordinate where we end drawing (does not exceed screen bounds)
+    // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
+
+    f32 m = (f32)(texture_size_y - 1) / (y_lower - y_upper);
+    f32 b = -m * y_upper;
+    f32 y_step = m * 1.0f;
+
+    f32 y_loc = m * y_hi + b;
+
+    // y_step is the number of (continuous) texture pixels y changes per screen pixel
+    // f32 y_step = (f32)((y_upper - y_lower) * texture_size_y) / screen_size_y;
+
+    // The (continuous) texture y pixel we are at at the top of the rendered image
+    // f32 y_loc = (f32)((y_upper - y_hi) * texture_size_y) / screen_size_y;
+
     for (int y = y_hi - 1; y > y_lo; y--) {
-        u32 texture_y = std::min((u32)(y_loc), TEXTURE_SIZE - 1);
+        // u32 texture_y = std::min((u32)(y_loc), texture_size_y - 1);
+        u32 texture_y = ((int)(y_loc) + y_base_offset) % texture_size_y;
+
         u32 color = bitmap.abgr[texture_y + baseline];
         if ((y * screen_size_x) + x >= 360 * 720) {
             std::cout << "bad!" << std::endl;
@@ -394,14 +410,15 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                     core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
                     f32 x_along_texture =
                         common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
-                    u32 texture_x_offset =
+                    u32 texture_x_offset_base =
                         (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
-                    u32 texture_y_offset = side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
-                    texture_x_offset += side_info->texture_info_middle.x_offset;
-                    texture_y_offset += side_info->texture_info_middle.y_offset;
-                    RenderTextureColumn(pixels, x, screen_size_x, y_lower, y_upper, y_lo, y_hi,
-                                        x_along_texture, texture_x_offset, texture_y_offset,
-                                        bitmap);
+                    u32 texture_y_offset_base =
+                        side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
+                    RenderTextureColumn(pixels, x, screen_size_x, screen_size_y, y_lower, y_upper,
+                                        y_lo, y_hi, x_along_texture, texture_x_offset_base,
+                                        texture_y_offset_base, TEXTURE_SIZE, TEXTURE_SIZE,
+                                        side_info->texture_info_middle.x_offset,
+                                        side_info->texture_info_middle.y_offset, bitmap);
 
                     break;
                 }
