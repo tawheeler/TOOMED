@@ -185,7 +185,7 @@ void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int screen_size_
                          int y_upper, int y_lo, int y_hi, f32 x_along_texture,
                          u32 texture_x_offset_base, u32 texture_y_offset_base, u32 texture_size_x,
                          u32 texture_size_y, u32 x_base_offset, u32 y_base_offset,
-                         const core::OldStyleBitmap& bitmap) {
+                         f32 texture_z_height, const core::OldStyleBitmap& bitmap) {
     f32 TILE_WIDTH = 1.0f;
     f32 PIX_PER_DISTANCE = texture_size_x / TILE_WIDTH;
 
@@ -197,18 +197,15 @@ void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int screen_size_
     // y_upper = screen y coordinate of top of column (can exceed screen bounds)
     // y_lo    = screen y coordinate where we end drawing (does not exceed screen bounds)
     // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
+    // texture_z_height = real-world height of the painting surface
 
-    f32 m = (f32)(texture_size_y - 1) / (y_lower - y_upper);
+    // y_step is the number of (continuous) texture pixels y changes per screen pixel
+    f32 m = (f32)(texture_size_y * texture_z_height - 1) / (y_lower - y_upper);
     f32 b = -m * y_upper;
     f32 y_step = m * 1.0f;
 
-    f32 y_loc = m * y_hi + b;
-
-    // y_step is the number of (continuous) texture pixels y changes per screen pixel
-    // f32 y_step = (f32)((y_upper - y_lower) * texture_size_y) / screen_size_y;
-
     // The (continuous) texture y pixel we are at at the top of the rendered image
-    // f32 y_loc = (f32)((y_upper - y_hi) * texture_size_y) / screen_size_y;
+    f32 y_loc = m * (2 * y_upper - y_hi) + b;
 
     for (int y = y_hi - 1; y > y_lo; y--) {
         // u32 texture_y = std::min((u32)(y_loc), texture_size_y - 1);
@@ -372,6 +369,13 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                     int y_lower = (int)(half_screen_size + gamma * (z_lower - camera.z));
                     int y_floor = (int)(half_screen_size + gamma * (z_floor - camera.z));
 
+                    // Calculate where along the segment we intersected.
+                    core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
+                    f32 x_along_texture =
+                        common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
+                    u32 texture_x_offset_base =
+                        (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
+
                     // Render the ceiling above the upper texture
                     while (y_hi > y_ceil) {
                         y_hi--;
@@ -380,10 +384,15 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
                     // Render the upper texture
                     if (y_upper < y_hi) {
-                        while (y_hi > y_upper) {
-                            y_hi--;
-                            pixels[(y_hi * screen_size_x) + x] = 0xFF0000FF;
-                        }
+                        f32 texture_z_height = z_ceil - z_upper;
+                        u32 texture_y_offset_base =
+                            side_info->texture_info_upper.texture_id * TEXTURE_SIZE;
+                        RenderTextureColumn(
+                            pixels, x, screen_size_x, screen_size_y, y_upper, y_ceil, y_upper, y_hi,
+                            x_along_texture, texture_x_offset_base, texture_y_offset_base,
+                            TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_upper.x_offset,
+                            side_info->texture_info_upper.y_offset, texture_z_height, bitmap);
+                        y_hi = y_upper;
                     }
 
                     // Render the floor below the lower texture
@@ -394,10 +403,19 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
 
                     // Render the lower texture
                     if (y_lower > y_lo) {
-                        while (y_lo < y_lower) {
-                            y_lo++;
-                            pixels[(y_lo * screen_size_x) + x] = 0x0000FFFF;
-                        }
+                        f32 texture_z_height = z_lower - z_floor;
+                        u32 texture_y_offset_base =
+                            side_info->texture_info_lower.texture_id * TEXTURE_SIZE;
+                        RenderTextureColumn(
+                            pixels, x, screen_size_x, screen_size_y, y_floor, y_lower, y_lo,
+                            y_lower, x_along_texture, texture_x_offset_base, texture_y_offset_base,
+                            TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_lower.x_offset,
+                            side_info->texture_info_lower.y_offset, texture_z_height, bitmap);
+                        y_lo = y_lower;
+                        // while (y_lo < y_lower) {
+                        //     y_lo++;
+                        //     pixels[(y_lo * screen_size_x) + x] = 0x0000FFFF;
+                        // }
                     }
 
                     // Continue on with our projection if the side is passable.
@@ -406,19 +424,14 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                     }
 
                     // The side info has a solid wall.
-                    // Calculate where along the segment we intersected.
-                    core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
-                    f32 x_along_texture =
-                        common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
-                    u32 texture_x_offset_base =
-                        (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
+                    f32 texture_z_height = z_upper - z_lower;
                     u32 texture_y_offset_base =
                         side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
-                    RenderTextureColumn(pixels, x, screen_size_x, screen_size_y, y_lower, y_upper,
-                                        y_lo, y_hi, x_along_texture, texture_x_offset_base,
-                                        texture_y_offset_base, TEXTURE_SIZE, TEXTURE_SIZE,
-                                        side_info->texture_info_middle.x_offset,
-                                        side_info->texture_info_middle.y_offset, bitmap);
+                    RenderTextureColumn(
+                        pixels, x, screen_size_x, screen_size_y, y_lower, y_upper, y_lo, y_hi,
+                        x_along_texture, texture_x_offset_base, texture_y_offset_base, TEXTURE_SIZE,
+                        TEXTURE_SIZE, side_info->texture_info_middle.x_offset,
+                        side_info->texture_info_middle.y_offset, texture_z_height, bitmap);
 
                     break;
                 }
@@ -687,10 +700,9 @@ int main() {
                 }
 
             } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
-                // if (event.key.keysym.sym == SDLK_e) {
-                //     ExportGameData(map);
-                // } else
-                if (event.key.keysym.sym == SDLK_i) {
+                if (event.key.keysym.sym == SDLK_o) {
+                    ExportGameData(map);
+                } else if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
                 } else if (event.key.keysym.sym == SDLK_w) {
                     keyboard_state.w = core::KeyboardKeyState_Pressed;

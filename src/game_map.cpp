@@ -9,9 +9,10 @@ namespace core {
 
 struct ExportedSideInfo {
     u16 flags;
-    u16 texture_id;
-    i16 x_offset;
-    i16 y_offset;
+    u16 sector_id;                    // Index into the sector list
+    TextureInfo texture_info_lower;   // Texture displayed if the floor height increases
+    TextureInfo texture_info_middle;  // Texture displayed if the wall is solid
+    TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -241,23 +242,11 @@ AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
     for (const auto& it : side_infos_) {
         const SideInfo& side_info = it.second;
 
-        ExportedSideInfo exported_side_info = {
-            .flags = side_info.flags,
-            .texture_id = side_info.texture_info_middle.texture_id,
-            .x_offset = side_info.texture_info_middle.x_offset,
-            .y_offset = side_info.texture_info_middle.y_offset};
-
-        // // TODO: Remove this calculation
-        // // Calculate the angle of the side info, and set it to shaded depending.
-        // common::Vec2f a = vertices_[side_info.a_ind];
-        // common::Vec2f b = vertices_[side_info.b_ind];
-        // float angle = atan2(b.y - a.y, b.x - a.x);
-        // float angledist =
-        //     std::min(common::AngleDist(angle, 0.0f), common::AngleDist(angle, 3.14159265f));
-        // if (angledist > M_PI / 4) {
-        //     // shaded
-        //     exported_side_info.flags |= kSideInfoFlag_DARK;
-        // }
+        ExportedSideInfo exported_side_info = {.flags = side_info.flags,
+                                               .sector_id = side_info.sector_id,
+                                               .texture_info_lower = side_info.texture_info_lower,
+                                               .texture_info_middle = side_info.texture_info_middle,
+                                               .texture_info_upper = side_info.texture_info_upper};
 
         buffer.write(reinterpret_cast<const char*>(&exported_side_info),
                      sizeof(exported_side_info));
@@ -287,13 +276,34 @@ AssetsExporterEntry GameMap::ExportSideInfos(const std::string& name) const {
 }
 
 // ------------------------------------------------------------------------------------------------
+AssetsExporterEntry GameMap::ExportSectors(const std::string& name) const {
+    AssetsExporterEntry entry;
+    entry.SetName(name);
+
+    // --------------------------------------
+    // Serialize the content
+    std::stringstream buffer;
+
+    // Serialize the counts
+    u32 n_sectors = sectors_.size();
+    buffer.write(reinterpret_cast<const char*>(&n_sectors), sizeof(u32));
+
+    // Serialize the sectors
+    for (const Sector& sector : sectors_) {
+        buffer.write(reinterpret_cast<const char*>(&sector), sizeof(sector));
+    }
+
+    // --------------------------------------
+    entry.SetData(buffer.str());
+
+    return entry;
+}
+
+// ------------------------------------------------------------------------------------------------
 bool GameMap::Export(AssetsExporter* exporter) const {
-    // First, write out the geometry_mesh entry for the delaunay mesh
     exporter->AddEntry(ExportDelaunayMesh(kAssetEntryGeometryMesh));
-
-    // Then write out all side info definitions
     exporter->AddEntry(ExportSideInfos(kAssetEntrySideInfos));
-
+    exporter->AddEntry(ExportSectors(kAssetEntrySectors));
     return true;
 }
 
@@ -332,10 +342,10 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
 
         SideInfo side_info = {};
         side_info.flags = exported_side_info.flags;
-        side_info.sector_id = 0;
-        side_info.texture_info_middle.texture_id = exported_side_info.texture_id;
-        side_info.texture_info_middle.x_offset = exported_side_info.x_offset;
-        side_info.texture_info_middle.y_offset = exported_side_info.y_offset;
+        side_info.sector_id = exported_side_info.sector_id;
+        side_info.texture_info_lower = exported_side_info.texture_info_lower;
+        side_info.texture_info_middle = exported_side_info.texture_info_middle;
+        side_info.texture_info_upper = exported_side_info.texture_info_upper;
         // NOTE: quarter edge index not yet set.
 
         side_infos.emplace_back(side_info);
@@ -360,6 +370,30 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
 }
 
 // ------------------------------------------------------------------------------------------------
+bool GameMap::LoadSectors(const std::string& name, const AssetsExporter& exporter) {
+    const AssetsExporterEntry* entry = exporter.FindEntry(name);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << name << std::endl;
+        return false;
+    }
+
+    const u8* data = entry->data.data();
+    u32 offset = 0;
+
+    u32 n_sectors = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    sectors_.clear();
+    sectors_.reserve(n_sectors);
+    for (u32 i = 0; i < n_sectors; i++) {
+        sectors_.push_back(*(Sector*)(data + offset));
+        offset += sizeof(Sector);
+    }
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 bool GameMap::Import(const AssetsExporter& exporter) {
     // Clear the game map
     Clear();
@@ -375,6 +409,9 @@ bool GameMap::Import(const AssetsExporter& exporter) {
 
     if (success) {
         success &= LoadSideInfos(kAssetEntrySideInfos, exporter);
+    }
+    if (success) {
+        success &= LoadSectors(kAssetEntrySectors, exporter);
     }
 
     return success;

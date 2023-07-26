@@ -16,6 +16,7 @@ namespace core {
 
 const std::string kAssetEntryGeometryMesh = "geometry_mesh";
 const std::string kAssetEntrySideInfos = "side_infos";
+const std::string kAssetEntrySectors = "sectors";
 
 struct TextureInfo {
     u16 texture_id;  // Index in the texture atlas
@@ -116,10 +117,12 @@ class GameMap {
   private:
     AssetsExporterEntry ExportDelaunayMesh(const std::string& name) const;
     AssetsExporterEntry ExportSideInfos(const std::string& name) const;
+    AssetsExporterEntry ExportSectors(const std::string& name) const;
 
     bool LoadDelaunayMesh(core::DelaunayMesh* mesh, const std::string& name,
                           const core::AssetsExporter& exporter);
     bool LoadSideInfos(const std::string& name, const core::AssetsExporter& exporter);
+    bool LoadSectors(const std::string& name, const core::AssetsExporter& exporter);
 
     // The map geometry
     core::DelaunayMesh mesh_;
