@@ -20,6 +20,7 @@
 #include "math_utils.hpp"
 #include "palette.hpp"
 #include "typedefs.hpp"
+#include "wad_importer.hpp"
 
 #define EDITOR_SCREEN_SIZE_X 1280
 #define EDITOR_SCREEN_SIZE_Y 720
@@ -412,10 +413,6 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                             TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_lower.x_offset,
                             side_info->texture_info_lower.y_offset, texture_z_height, bitmap);
                         y_lo = y_lower;
-                        // while (y_lo < y_lower) {
-                        //     y_lo++;
-                        //     pixels[(y_lo * screen_size_x) + x] = 0x0000FFFF;
-                        // }
                     }
 
                     // Continue on with our projection if the side is passable.
@@ -561,6 +558,11 @@ int main() {
     auto bitmap_data_opt = julia_assets->FindEntryData("textures");
     ASSERT(bitmap_data_opt, "Failed to find texture data");
     core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
+
+    // Load our DOOM assets
+    std::unique_ptr<core::WadImporter> doom_assets =
+        core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
+    ASSERT(julia_assets, "Failed to load DOOM Assets");
 
     // Create our map
     core::GameMap map;
