@@ -43,31 +43,21 @@ WadImporter::WadImporter(u8* blob, u32 n_bytes) : blob_(blob), blob_size_(n_byte
     // Process the loaded assets from the loaded binary blob
 
     // Read the number of table of content entries
-    u32 n_entries_ = *(u32*)(blob_ + 0x04);
+    n_entries_ = *(u32*)(blob_ + 0x04);
     u32 dir_loc = *(u32*)(blob_ + 0x08);
 
     // Set the blob entries
     entries_ = (WadDirectoryEntry*)(blob_ + dir_loc);
-
-    // Scan through them
-    for (u32 directory_index = 0; directory_index < n_entries_; directory_index++) {
-        WadDirectoryEntry* entry = entries_ + directory_index;
-
-        // Make the name null-terminated just in case.
-        entry->name[8 - 1] = '\0';
-        fprintf(stdout, "Entry %d: %s at offset %d\n", directory_index, entry->name,
-                entry->byte_offset);
-    }
 }
 
 // ------------------------------------------------------------------------------------------------
 WadImporter::~WadImporter() { free(blob_); }
 
 // ------------------------------------------------------------------------------------------------
-std::optional<u8*> WadImporter::FindEntryData(const std::string& entry_name) const {
+std::optional<const u8*> WadImporter::FindEntryData(const std::string& entry_name) const {
     for (u32 i = 0; i < n_entries_; i++) {
         WadDirectoryEntry* entry = entries_ + i;
-        if (strcmp(entry->name, entry_name.c_str()) == 0) {
+        if (strncmp(entry->name, entry_name.c_str(), 8) == 0) {
             return blob_ + entry->byte_offset;
         }
     }

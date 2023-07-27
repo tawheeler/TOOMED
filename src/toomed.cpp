@@ -19,6 +19,7 @@
 #include "input.hpp"
 #include "math_utils.hpp"
 #include "palette.hpp"
+#include "texture.hpp"
 #include "typedefs.hpp"
 #include "wad_importer.hpp"
 
@@ -562,7 +563,9 @@ int main() {
     // Load our DOOM assets
     std::unique_ptr<core::WadImporter> doom_assets =
         core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
-    ASSERT(julia_assets, "Failed to load DOOM Assets");
+    ASSERT(doom_assets, "Failed to load DOOM Assets");
+
+    std::vector<doom::Texture> textures = doom::ParseDoomTextures(doom_assets);
 
     // Create our map
     core::GameMap map;
@@ -581,6 +584,7 @@ int main() {
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
     core::KeyBoardState keyboard_state;
     core::ClearKeyboardState(&keyboard_state);
+    int texture_to_render = 0;
 
     CameraState player_cam = {};
     player_cam.pos = {5.0, 5.0};
@@ -1182,6 +1186,18 @@ int main() {
             ImGui::End();
         }
 
+        {
+            ImGui::Begin("Texture");
+
+            i32 step_i32 = 1;
+            int flags = 0;
+            if (ImGui::InputScalar("texture_to_render", ImGuiDataType_S32, &texture_to_render,
+                                   (void*)(&step_i32), (void*)(NULL), "%d", flags)) {
+                texture_to_render = std::clamp(texture_to_render, 0, (int)(textures.size()));
+            }
+            ImGui::End();
+        }
+
         // ImGUI Rendering
         ImGui::Render();
         SDL_RenderSetScale(editor_window_data.renderer, io.DisplayFramebufferScale.x,
@@ -1198,6 +1214,23 @@ int main() {
             RenderWallsViaMesh(player_view_pixels, wall_raycast_radius,
                                player_window_data.screen_size_x, player_window_data.screen_size_y,
                                map, player_cam, bitmap);
+
+            // Render the selected image directly to the screen.
+            const doom::Texture& texture = textures[texture_to_render];
+
+            for (u16 x_tex = 0; x_tex < texture.SizeX(); x_tex++) {
+                for (u16 y_tex = 0; y_tex < texture.SizeY(); y_tex++) {
+                    u8 palette_index = texture.GetPixel(x_tex, y_tex);
+                    u8 r = core::COLOR_PALETTE[3 * palette_index];
+                    u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
+                    u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
+                    u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
+                    u16 x_screen = x_tex + 10;
+                    u16 y_screen = player_window_data.screen_size_y - (y_tex + 10);
+                    player_view_pixels[(y_screen * player_window_data.screen_size_x) + x_screen] =
+                        abgr;
+                }
+            }
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);

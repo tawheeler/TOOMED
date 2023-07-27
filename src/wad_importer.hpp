@@ -24,7 +24,7 @@ class WadImporter {
 
     // If an entry with the given name exists, returns a pointer (into blob_)
     // of where that entry's data begins.
-    std::optional<u8*> FindEntryData(const std::string& entry_name) const;
+    std::optional<const u8*> FindEntryData(const std::string& entry_name) const;
 
   private:
     u8* blob_;
