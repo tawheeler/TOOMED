@@ -8,6 +8,31 @@
 
 namespace doom {
 
+// Based on the Patch used by DOOM.
+// https://doomwiki.org/wiki/Picture_format
+// Patches are columnar images where each pixel column is represented by a list of posts.
+// This allows for skipping transparent tiles and for avoiding duplicate columns.
+// Note that this format does not use Posts exactly, but skips the unneeded padding bytes.
+struct Patch {
+    std::string name;
+    u16 size_x;    // number of bytes wide
+    u16 size_y;    // number of bytes tall
+    u16 origin_x;  // the number of pixels from the left edge that this patch's origin is
+    u16 origin_y;  // the number of pixels from the top edge that this patch's origin is
+
+    // Array of indices into `post_data` for each pixel column (i.e. of length `size_x`).
+    // Note that this is different than the column_offsets used in the DOOM format, which
+    // store the number of bytes past the start of the mp, and thus include the Patch header.
+    std::vector<u32> column_offsets;
+
+    // Each post consists of:
+    //     u8   y_delta: The number of transparent pixels to skip prior to this post
+    //     u8   length: The number of pixels in this post
+    //     u8[] palette_indices: The array of palette indices (of length `length`)
+    // Posts are terminated by 0xFF
+    std::vector<u8> post_data;
+};
+
 class Texture {
   public:
     Texture(const std::string& name, u16 size_x, u16 size_y);
@@ -21,6 +46,11 @@ class Texture {
     u8 GetPixel(u32 idx) const;
     u8 GetPixel(u16 x, u16 y) const;
 
+    u8 IsTransparent(u32 idx) const;
+    u8 IsTransparent(u16 x, u16 y) const;
+
+    Patch ToPatch();
+
   private:
     std::string name_;
     u16 size_x_;            // number of bytes wide
@@ -31,8 +61,9 @@ class Texture {
     //  |
     //  |
     //  v y
+    std::vector<bool> transparent_;  // Track whether pixels have been written to
 };
 
-std::vector<Texture> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& importer);
+std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& importer);
 
 }  // namespace doom

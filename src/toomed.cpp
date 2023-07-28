@@ -565,7 +565,7 @@ int main() {
         core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
     ASSERT(doom_assets, "Failed to load DOOM Assets");
 
-    std::vector<doom::Texture> textures = doom::ParseDoomTextures(doom_assets);
+    std::vector<doom::Patch> patches = doom::ParseDoomTextures(doom_assets);
 
     // Create our map
     core::GameMap map;
@@ -1193,7 +1193,7 @@ int main() {
             int flags = 0;
             if (ImGui::InputScalar("texture_to_render", ImGuiDataType_S32, &texture_to_render,
                                    (void*)(&step_i32), (void*)(NULL), "%d", flags)) {
-                texture_to_render = std::clamp(texture_to_render, 0, (int)(textures.size()));
+                texture_to_render = std::clamp(texture_to_render, 0, (int)(patches.size()));
             }
             ImGui::End();
         }
@@ -1216,19 +1216,42 @@ int main() {
                                map, player_cam, bitmap);
 
             // Render the selected image directly to the screen.
-            const doom::Texture& texture = textures[texture_to_render];
+            const doom::Patch& patch = patches[texture_to_render];
 
-            for (u16 x_tex = 0; x_tex < texture.SizeX(); x_tex++) {
-                for (u16 y_tex = 0; y_tex < texture.SizeY(); y_tex++) {
-                    u8 palette_index = texture.GetPixel(x_tex, y_tex);
-                    u8 r = core::COLOR_PALETTE[3 * palette_index];
-                    u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
-                    u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
-                    u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
-                    u16 x_screen = x_tex + 10;
-                    u16 y_screen = player_window_data.screen_size_y - (y_tex + 10);
+            // First render a larger square
+            for (int x_border = -5; x_border < patch.size_x + 5; x_border++) {
+                for (int y_border = -5; y_border < patch.size_y + 5; y_border++) {
+                    u16 x_screen = x_border + 10;
+                    u16 y_screen = player_window_data.screen_size_y - (y_border + 10);
                     player_view_pixels[(y_screen * player_window_data.screen_size_x) + x_screen] =
-                        abgr;
+                        0xFFFF00FF;
+                }
+            }
+
+            // Render the patch
+            for (u16 x_patch = 0; x_patch < patch.size_x; x_patch++) {
+                u32 column_offset = patch.column_offsets[x_patch];
+
+                u16 y_patch = 0;
+                while (patch.post_data[column_offset] != 0xFF) {
+                    u8 y_delta = patch.post_data[column_offset];
+                    column_offset++;
+                    u8 length = patch.post_data[column_offset];
+                    column_offset++;
+                    y_patch += y_delta;
+                    for (u8 j = 0; j < length; j++) {
+                        u8 palette_index = patch.post_data[column_offset];
+                        column_offset++;
+                        u8 r = core::COLOR_PALETTE[3 * palette_index];
+                        u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
+                        u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
+                        u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
+                        u16 x_screen = x_patch + 10;
+                        u16 y_screen = player_window_data.screen_size_y - (y_patch + 10);
+                        player_view_pixels[(y_screen * player_window_data.screen_size_x) +
+                                           x_screen] = abgr;
+                        y_patch += 1;
+                    }
                 }
             }
 
