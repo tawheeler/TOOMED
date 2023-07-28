@@ -201,31 +201,109 @@ void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int screen_size_
     // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
     // texture_z_height = real-world height of the painting surface
 
-    // y_step is the number of (continuous) texture pixels y changes per screen pixel
+    // y_tex_step is the number of (continuous) texture pixels y changes per screen pixel
     f32 m = (f32)(texture_size_y * texture_z_height - 1) / (y_lower - y_upper);
     f32 b = -m * y_upper;
-    f32 y_step = m * 1.0f;
+    f32 y_tex_step = m * 1.0f;
 
     // The (continuous) texture y pixel we are at at the top of the rendered image
-    f32 y_loc = m * (2 * y_upper - y_hi) + b;
+    f32 y_tex = m * (2 * y_upper - y_hi) + b;
 
     for (int y = y_hi - 1; y > y_lo; y--) {
-        // u32 texture_y = std::min((u32)(y_loc), texture_size_y - 1);
-        u32 texture_y = ((int)(y_loc) + y_base_offset) % texture_size_y;
+        u32 texture_y = ((int)(y_tex) + y_base_offset) % texture_size_y;
 
         u32 color = bitmap.abgr[texture_y + baseline];
         if ((y * screen_size_x) + x >= 360 * 720) {
             std::cout << "bad!" << std::endl;
         }
         pixels[(y * screen_size_x) + x] = color;
-        y_loc += y_step;
+        y_tex += y_tex_step;
     }
 }
 
 // ------------------------------------------------------------------------------------------------
-void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
-                        const core::GameMap& game_map, const CameraState& camera,
-                        const core::OldStyleBitmap& bitmap) {
+void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_size_y, int y_lower,
+                       int y_upper, int y_lo, int y_hi, f32 x_along_texture,
+                       u32 texture_y_offset_base, u32 x_base_offset, u32 y_base_offset,
+                       f32 texture_z_height, const doom::Patch& patch) {
+    // TODO: for now, ignore y_base_offset.
+    f32 TILE_WIDTH = 1.0f;
+    f32 PIX_PER_DISTANCE = patch.size_x / TILE_WIDTH;
+
+    u32 texture_x = ((int)(PIX_PER_DISTANCE * x_along_texture) + x_base_offset) % patch.size_x;
+
+    // y_lower = screen y coordinate of bottom of column (can exceed screen bounds)
+    // y_upper = screen y coordinate of top of column (can exceed screen bounds)
+    // y_lo    = screen y coordinate where we end drawing (does not exceed screen bounds)
+    // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
+    // texture_z_height = real-world height of the painting surface
+
+    // y_patch = m * y_screen + b for converting screen to patch coordinate
+    //                         0 = m * y_upper + b   -> b = -m * y_upper
+    // y_patch_max * patch_z - 1 = m * y_lower + b
+    //                           = m * y_lower - m * y_upper
+    //                           = m * (y_lower - y_upper)
+    // m = (y_patch_max * patch_z - 1) / (y_lower - y_upper)
+
+    f32 m = (f32)(patch.size_y * texture_z_height - 1.0f) / (y_lower - y_upper);
+    // f32 b = -m * y_upper;
+
+    // the number of (continuous) patch pixels y changes per screen pixel
+    f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes by 1, y_patch goes up this much
+    f32 y_screen_step_per_patch_pixel = 1.0f / m;
+
+    // The (continuous) texture y pixel we are at at the top of the rendered image
+    // f32 y_patch = m * (2 * y_upper - y_hi) + b;
+
+    f32 y_patch = 0.0f;
+    f32 y_screen = y_upper;
+
+    u32 column_offset = patch.column_offsets[texture_x];
+    while (patch.post_data[column_offset] != 0xFF) {
+        u8 y_patch_delta = patch.post_data[column_offset];
+        column_offset++;
+        u8 post_length = patch.post_data[column_offset];
+        column_offset++;
+
+        // skip transparent pixels
+        y_patch += y_patch_delta;
+        y_screen += y_patch_delta * y_screen_step_per_patch_pixel;
+
+        // process the post. We have `post_length` pixels to draw
+        while (post_length > 0) {
+            // Keep decreasing y_screen (and increasing y_patch) as long as we are within the post
+            // data.
+
+            // Render pixels
+            // TODO: @efficiency Extract color more efficiently.
+            u8 palette_index = patch.post_data[column_offset];
+            column_offset++;
+            u8 r = core::COLOR_PALETTE[3 * palette_index];
+            u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
+            u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
+            u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
+
+            // Render this color for all screen pixels that map to y_patch
+            u16 y_patch_discrete = (u16)y_patch;
+            int y_screen_discrete = (int)y_screen;
+            while ((u16)y_patch == y_patch_discrete) {
+                if (y_screen_discrete < y_hi && y_screen_discrete > y_lo) {
+                    pixels[(y_screen_discrete * screen_size_x) + x_screen] = abgr;
+                }
+                y_screen_discrete -= 1;
+                y_screen -= 1.0f;
+                y_patch -= y_patch_step_per_screen_pixel;
+            }
+
+            post_length--;
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
+                 const core::GameMap& game_map, const CameraState& camera,
+                 const core::OldStyleBitmap& bitmap, const doom::Patch& patch) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     // Camera data
@@ -425,11 +503,16 @@ void RenderWallsViaMesh(u32* pixels, f32* wall_raycast_radius, int screen_size_x
                     f32 texture_z_height = z_upper - z_lower;
                     u32 texture_y_offset_base =
                         side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
-                    RenderTextureColumn(
-                        pixels, x, screen_size_x, screen_size_y, y_lower, y_upper, y_lo, y_hi,
-                        x_along_texture, texture_x_offset_base, texture_y_offset_base, TEXTURE_SIZE,
-                        TEXTURE_SIZE, side_info->texture_info_middle.x_offset,
-                        side_info->texture_info_middle.y_offset, texture_z_height, bitmap);
+                    RenderPatchColumn(pixels, x, screen_size_x, screen_size_y, y_lower, y_upper,
+                                      y_lo, y_hi, x_along_texture, texture_y_offset_base,
+                                      side_info->texture_info_middle.x_offset,
+                                      side_info->texture_info_middle.y_offset, texture_z_height,
+                                      patch);
+                    // RenderTextureColumn(
+                    //     pixels, x, screen_size_x, screen_size_y, y_lower, y_upper, y_lo,
+                    //     y_hi, x_along_texture, texture_x_offset_base, texture_y_offset_base,
+                    //     TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_middle.x_offset,
+                    //     side_info->texture_info_middle.y_offset, texture_z_height, bitmap);
 
                     break;
                 }
@@ -1211,9 +1294,8 @@ int main() {
             MoveCamera(&player_cam, keyboard_state, map, dt);
 
             // Render the player view.
-            RenderWallsViaMesh(player_view_pixels, wall_raycast_radius,
-                               player_window_data.screen_size_x, player_window_data.screen_size_y,
-                               map, player_cam, bitmap);
+            RenderWalls(player_view_pixels, wall_raycast_radius, player_window_data.screen_size_x,
+                        player_window_data.screen_size_y, map, player_cam, bitmap, patches[2]);
 
             // Render the selected image directly to the screen.
             const doom::Patch& patch = patches[texture_to_render];
