@@ -249,8 +249,12 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
     // f32 b = -m * y_upper;
 
     // the number of (continuous) patch pixels y changes per screen pixel
-    f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes by 1, y_patch goes up this much
+    f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes up by 1, y_patch goes up this much
     f32 y_screen_step_per_patch_pixel = 1.0f / m;
+
+    if (y_patch_step_per_screen_pixel < -1.1f) {
+        y_patch_step_per_screen_pixel = m;
+    }
 
     // The (continuous) texture y pixel we are at at the top of the rendered image
     // f32 y_patch = m * (2 * y_upper - y_hi) + b;
@@ -262,7 +266,7 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
     while (patch.post_data[column_offset] != 0xFF) {
         u8 y_patch_delta = patch.post_data[column_offset];
         column_offset++;
-        u8 post_length = patch.post_data[column_offset];
+        int post_length = patch.post_data[column_offset];
         column_offset++;
 
         // skip transparent pixels
@@ -270,14 +274,13 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
         y_screen += y_patch_delta * y_screen_step_per_patch_pixel;
 
         // process the post. We have `post_length` pixels to draw
-        while (post_length > 0) {
+        while (post_length > 0 && y_screen > y_lo) {
             // Keep decreasing y_screen (and increasing y_patch) as long as we are within the post
             // data.
 
             // Render pixels
             // TODO: @efficiency Extract color more efficiently.
             u8 palette_index = patch.post_data[column_offset];
-            column_offset++;
             u8 r = core::COLOR_PALETTE[3 * palette_index];
             u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
             u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
@@ -295,7 +298,12 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
                 y_patch -= y_patch_step_per_screen_pixel;
             }
 
-            post_length--;
+            u16 patch_delta = (u16)y_patch - y_patch_discrete;
+            while (patch_delta > 0) {
+                column_offset += 1;
+                post_length -= 1;
+                patch_delta -= 1;
+            }
         }
     }
 }
