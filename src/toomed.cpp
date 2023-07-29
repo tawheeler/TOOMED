@@ -183,45 +183,6 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
 }
 
 // ------------------------------------------------------------------------------------------------
-void RenderTextureColumn(u32* pixels, int x, int screen_size_x, int screen_size_y, int y_lower,
-                         int y_upper, int y_lo, int y_hi, f32 x_along_texture,
-                         u32 texture_x_offset_base, u32 texture_y_offset_base, u32 texture_size_x,
-                         u32 texture_size_y, u32 x_base_offset, u32 y_base_offset,
-                         f32 texture_z_height, const core::OldStyleBitmap& bitmap) {
-    f32 TILE_WIDTH = 1.0f;
-    f32 PIX_PER_DISTANCE = texture_size_x / TILE_WIDTH;
-
-    u32 texture_x = ((int)(PIX_PER_DISTANCE * x_along_texture) + x_base_offset) % texture_size_x +
-                    texture_x_offset_base;
-    u32 baseline = bitmap.GetColumnMajorPixelIndex(texture_x, texture_y_offset_base);
-
-    // y_lower = screen y coordinate of bottom of column (can exceed screen bounds)
-    // y_upper = screen y coordinate of top of column (can exceed screen bounds)
-    // y_lo    = screen y coordinate where we end drawing (does not exceed screen bounds)
-    // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
-    // texture_z_height = real-world height of the painting surface
-
-    // y_tex_step is the number of (continuous) texture pixels y changes per screen pixel
-    f32 m = (f32)(texture_size_y * texture_z_height - 1) / (y_lower - y_upper);
-    f32 b = -m * y_upper;
-    f32 y_tex_step = m * 1.0f;
-
-    // The (continuous) texture y pixel we are at at the top of the rendered image
-    f32 y_tex = m * (2 * y_upper - y_hi) + b;
-
-    for (int y = y_hi - 1; y > y_lo; y--) {
-        u32 texture_y = ((int)(y_tex) + y_base_offset) % texture_size_y;
-
-        u32 color = bitmap.abgr[texture_y + baseline];
-        if ((y * screen_size_x) + x >= 360 * 720) {
-            std::cout << "bad!" << std::endl;
-        }
-        pixels[(y * screen_size_x) + x] = color;
-        y_tex += y_tex_step;
-    }
-}
-
-// ------------------------------------------------------------------------------------------------
 void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_size_y, int y_lower,
                        int y_upper, int y_lo, int y_hi, f32 x_along_texture,
                        u32 texture_y_offset_base, u32 x_base_offset, u32 y_base_offset,
@@ -246,7 +207,6 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
     // m = (y_patch_max * patch_z - 1) / (y_lower - y_upper)
 
     f32 m = (f32)(patch.size_y * texture_z_height - 1.0f) / (y_lower - y_upper);
-    // f32 b = -m * y_upper;
 
     // the number of (continuous) patch pixels y changes per screen pixel
     f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes up by 1, y_patch goes up this much
@@ -311,7 +271,7 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
 // ------------------------------------------------------------------------------------------------
 void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
                  const core::GameMap& game_map, const CameraState& camera,
-                 const core::OldStyleBitmap& bitmap, const doom::Patch& patch) {
+                 const core::OldStyleBitmap& bitmap, const std::vector<doom::Patch>& patches) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     // Camera data
@@ -475,11 +435,11 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                         f32 texture_z_height = z_ceil - z_upper;
                         u32 texture_y_offset_base =
                             side_info->texture_info_upper.texture_id * TEXTURE_SIZE;
-                        RenderTextureColumn(
-                            pixels, x, screen_size_x, screen_size_y, y_upper, y_ceil, y_upper, y_hi,
-                            x_along_texture, texture_x_offset_base, texture_y_offset_base,
-                            TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_upper.x_offset,
-                            side_info->texture_info_upper.y_offset, texture_z_height, bitmap);
+                        RenderPatchColumn(pixels, x, screen_size_x, screen_size_y, y_upper, y_ceil,
+                                          y_upper, y_hi, x_along_texture, texture_y_offset_base,
+                                          side_info->texture_info_upper.x_offset,
+                                          side_info->texture_info_upper.y_offset, texture_z_height,
+                                          patches[side_info->texture_info_upper.texture_id]);
                         y_hi = y_upper;
                     }
 
@@ -494,11 +454,11 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                         f32 texture_z_height = z_lower - z_floor;
                         u32 texture_y_offset_base =
                             side_info->texture_info_lower.texture_id * TEXTURE_SIZE;
-                        RenderTextureColumn(
-                            pixels, x, screen_size_x, screen_size_y, y_floor, y_lower, y_lo,
-                            y_lower, x_along_texture, texture_x_offset_base, texture_y_offset_base,
-                            TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_lower.x_offset,
-                            side_info->texture_info_lower.y_offset, texture_z_height, bitmap);
+                        RenderPatchColumn(pixels, x, screen_size_x, screen_size_y, y_floor, y_lower,
+                                          y_lo, y_lower, x_along_texture, texture_y_offset_base,
+                                          side_info->texture_info_lower.x_offset,
+                                          side_info->texture_info_lower.y_offset, texture_z_height,
+                                          patches[side_info->texture_info_lower.texture_id]);
                         y_lo = y_lower;
                     }
 
@@ -515,12 +475,7 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                                       y_lo, y_hi, x_along_texture, texture_y_offset_base,
                                       side_info->texture_info_middle.x_offset,
                                       side_info->texture_info_middle.y_offset, texture_z_height,
-                                      patch);
-                    // RenderTextureColumn(
-                    //     pixels, x, screen_size_x, screen_size_y, y_lower, y_upper, y_lo,
-                    //     y_hi, x_along_texture, texture_x_offset_base, texture_y_offset_base,
-                    //     TEXTURE_SIZE, TEXTURE_SIZE, side_info->texture_info_middle.x_offset,
-                    //     side_info->texture_info_middle.y_offset, texture_z_height, bitmap);
+                                      patches[side_info->texture_info_middle.texture_id]);
 
                     break;
                 }
@@ -675,7 +630,6 @@ int main() {
     core::QuarterEdgeIndex qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos);
     core::KeyBoardState keyboard_state;
     core::ClearKeyboardState(&keyboard_state);
-    int texture_to_render = 0;
 
     CameraState player_cam = {};
     player_cam.pos = {5.0, 5.0};
@@ -1170,8 +1124,8 @@ int main() {
                                        (void*)(&side_info->texture_info_upper.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_info_upper.texture_id > 17) {
-                        side_info->texture_info_upper.texture_id = 17;
+                    if (side_info->texture_info_upper.texture_id >= patches.size()) {
+                        side_info->texture_info_upper.texture_id = patches.size() - 1;
                     }
                 }
 
@@ -1187,8 +1141,8 @@ int main() {
                                        (void*)(&side_info->texture_info_middle.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_info_middle.texture_id > 17) {
-                        side_info->texture_info_middle.texture_id = 17;
+                    if (side_info->texture_info_middle.texture_id >= patches.size()) {
+                        side_info->texture_info_middle.texture_id = patches.size() - 1;
                     }
                 }
                 ImGui::InputScalar("middle x_offset", ImGuiDataType_S16,
@@ -1203,8 +1157,8 @@ int main() {
                                        (void*)(&side_info->texture_info_lower.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_info_lower.texture_id > 17) {
-                        side_info->texture_info_lower.texture_id = 17;
+                    if (side_info->texture_info_lower.texture_id >= patches.size()) {
+                        side_info->texture_info_lower.texture_id = patches.size() - 1;
                     }
                 }
                 ImGui::InputScalar("lower x_offset", ImGuiDataType_S16,
@@ -1277,18 +1231,6 @@ int main() {
             ImGui::End();
         }
 
-        {
-            ImGui::Begin("Texture");
-
-            i32 step_i32 = 1;
-            int flags = 0;
-            if (ImGui::InputScalar("texture_to_render", ImGuiDataType_S32, &texture_to_render,
-                                   (void*)(&step_i32), (void*)(NULL), "%d", flags)) {
-                texture_to_render = std::clamp(texture_to_render, 0, (int)(patches.size()));
-            }
-            ImGui::End();
-        }
-
         // ImGUI Rendering
         ImGui::Render();
         SDL_RenderSetScale(editor_window_data.renderer, io.DisplayFramebufferScale.x,
@@ -1303,47 +1245,7 @@ int main() {
 
             // Render the player view.
             RenderWalls(player_view_pixels, wall_raycast_radius, player_window_data.screen_size_x,
-                        player_window_data.screen_size_y, map, player_cam, bitmap, patches[2]);
-
-            // Render the selected image directly to the screen.
-            const doom::Patch& patch = patches[texture_to_render];
-
-            // First render a larger square
-            for (int x_border = -5; x_border < patch.size_x + 5; x_border++) {
-                for (int y_border = -5; y_border < patch.size_y + 5; y_border++) {
-                    u16 x_screen = x_border + 10;
-                    u16 y_screen = player_window_data.screen_size_y - (y_border + 10);
-                    player_view_pixels[(y_screen * player_window_data.screen_size_x) + x_screen] =
-                        0xFFFF00FF;
-                }
-            }
-
-            // Render the patch
-            for (u16 x_patch = 0; x_patch < patch.size_x; x_patch++) {
-                u32 column_offset = patch.column_offsets[x_patch];
-
-                u16 y_patch = 0;
-                while (patch.post_data[column_offset] != 0xFF) {
-                    u8 y_delta = patch.post_data[column_offset];
-                    column_offset++;
-                    u8 length = patch.post_data[column_offset];
-                    column_offset++;
-                    y_patch += y_delta;
-                    for (u8 j = 0; j < length; j++) {
-                        u8 palette_index = patch.post_data[column_offset];
-                        column_offset++;
-                        u8 r = core::COLOR_PALETTE[3 * palette_index];
-                        u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
-                        u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
-                        u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
-                        u16 x_screen = x_patch + 10;
-                        u16 y_screen = player_window_data.screen_size_y - (y_patch + 10);
-                        player_view_pixels[(y_screen * player_window_data.screen_size_x) +
-                                           x_screen] = abgr;
-                        y_patch += 1;
-                    }
-                }
-            }
+                        player_window_data.screen_size_y, map, player_cam, bitmap, patches);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);

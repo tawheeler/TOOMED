@@ -7,7 +7,7 @@ Texture::Texture(const std::string& name, u16 size_x, u16 size_y) :
     name_(name), size_x_(size_x), size_y_(size_y) {
     u32 n_pixels = size_x_ * size_y_;
     data_.resize(n_pixels, 252);
-    transparent_.resize(n_pixels, false);
+    transparent_.resize(n_pixels, true);
 }
 
 // ------------------------------------------------------------------------------------------------
