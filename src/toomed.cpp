@@ -188,6 +188,11 @@ struct RenderData {
     u32 n_pixels_per_world_unit;  // Number of pixels across a texture on a 1 unit span should be.
     u32 screen_size_x;            // The number of pixels across the canvas is
     u32 screen_size_y;            // The number of pixels high the canvas is
+    f32 half_screen_size_y;
+    f32 darkness_per_world_dist;  // for the 32 colormaps, by increasing darkness
+    u32 max_render_steps;         // Maximum number of triangles we will traverse
+    u32 color_ceil;
+    u32 color_floor;
 };
 
 void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int y_lo, int y_hi,
@@ -277,26 +282,215 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
 }
 
 // ------------------------------------------------------------------------------------------------
+void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
+                      const CameraState& camera, const std::vector<doom::Patch>& patches,
+                      const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
+                      const RenderData& render_data, const common::Vec2f& pos,
+                      const common::Vec2f& dir, core::QuarterEdgeIndex qe_dual, int x, int y_lo,
+                      int y_hi, f32 cam_len_times_screen_size_y_over_fov_y, u32 n_steps) {
+    if (n_steps > render_data.max_render_steps) {
+        return;  // limit the max depth
+    }
+
+    // Grab the enclosing triangle.
+    const core::DelaunayMesh mesh = game_map.GetMesh();
+    auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
+
+    common::Vec2f a = mesh.GetVertex(qe_ab);
+    common::Vec2f b = mesh.GetVertex(qe_bc);
+    common::Vec2f c = mesh.GetVertex(qe_ca);
+
+    // Project our ray out far enough that it would exit our mesh
+    f32 projection_distance = 100.0;  // Ridiculously large
+    common::Vec2f pos_next_delta = projection_distance * dir;
+    common::Vec2f pos_next = pos + pos_next_delta;
+
+    f32 min_interp = INFINITY;
+    core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
+
+    // The edge vector of the face that we last crossed
+    common::Vec2f v_face = {0.0, 0.0};
+
+    // See if we cross any of the 3 faces for the triangle we are in,
+    // and cross the first segment.
+    const f32 eps = 1e-4;
+    if (common::GetRightHandedness(a, b, pos_next) < -eps) {
+        // We would cross AB
+        common::Vec2f v = b - a;
+        common::Vec2f w = pos - a;
+        float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+        if (interp_ab < min_interp) {
+            min_interp = interp_ab;
+            qe_side = qe_ab;
+            v_face = v;
+        }
+    }
+    if (common::GetRightHandedness(b, c, pos_next) < -eps) {
+        // We would cross BC
+        common::Vec2f v = c - b;
+        common::Vec2f w = pos - b;
+        float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+        if (interp_bc < min_interp) {
+            min_interp = interp_bc;
+            qe_side = qe_bc;
+            v_face = v;
+        }
+    }
+    if (common::GetRightHandedness(c, a, pos_next) < -eps) {
+        // We would cross CA
+        common::Vec2f v = a - c;
+        common::Vec2f w = pos - c;
+        float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+        if (interp_ca < min_interp) {
+            min_interp = interp_ca;
+            qe_side = qe_ca;
+            v_face = v;
+        }
+    }
+
+    // Move to the face.
+    if (core::IsValid(qe_side)) {
+        // Should always be non-null.
+        pos_next = pos + min_interp * pos_next_delta;
+        qe_dual = mesh.Rot(qe_side);  // The next face
+
+        const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
+        if (side_info != nullptr) {
+            const f32 ray_len = std::max(common::Norm(pos_next - camera.pos), 0.01f);
+            const f32 gamma = cam_len_times_screen_size_y_over_fov_y / ray_len;
+            wall_raycast_radius[x] = ray_len;
+
+            f32 z_ceil = 1.0;
+            f32 z_upper = 0.8;
+            f32 z_lower = 0.2;
+            f32 z_floor = 0.0;
+
+            const core::Sector* sector = game_map.GetSector(side_info->sector_id);
+            if (sector != nullptr) {
+                z_ceil = sector->z_ceil;
+                z_upper = sector->z_ceil;
+                z_lower = sector->z_floor;
+                z_floor = sector->z_floor;
+            }
+
+            // Get the height on the other side, if it is passable.
+            const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
+            if (is_passable) {
+                core::QuarterEdgeIndex qe_sym = mesh.Sym(qe_side);
+                const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
+                if (side_info_sym != nullptr) {
+                    const core::Sector* sector_sym = game_map.GetSector(side_info_sym->sector_id);
+                    if (sector_sym != nullptr) {
+                        z_lower = sector_sym->z_floor;
+                        z_upper = sector_sym->z_ceil;
+                    } else {
+                        std::cout << "Unexpected nullptr side_info_sym!" << std::endl;
+                    }
+                } else {
+                    std::cout << "Unexpected nullptr qe_sym!" << std::endl;
+                }
+            }
+
+            f32 half_screen_size_y = render_data.half_screen_size_y;
+            int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera.z));
+            int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera.z));
+            int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera.z));
+            int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
+
+            // Calculate where along the segment we intersected.
+            core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
+            f32 v_face_len = common::Norm(v_face);
+            f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_face_src));
+
+            // Determine the light level
+            u8 light_level_sector = 0;  // base light level (TODO: Move to sector data.)
+            u8 colormap_index =
+                light_level_sector + (u8)(render_data.darkness_per_world_dist * ray_len);
+
+            // Make faces that run closer to north-south brighter, and faces running closer
+            // to east-west darker. (cos > 0.7071). We're using the law of cosines.
+            bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
+            if (face_is_closer_to_east_west) {
+                colormap_index += 1;  // darker
+            } else if (colormap_index > 0) {
+                colormap_index -= 1;  // lighter
+            }
+
+            u8 max_colormap_index = 32 - 1;
+            colormap_index = std::min(colormap_index, max_colormap_index);
+            const core::Colormap& colormap = colormaps[colormap_index];
+
+            // Render the ceiling above the upper texture
+            while (y_hi > y_ceil) {
+                y_hi--;
+                pixels[(y_hi * render_data.screen_size_x) + x] = render_data.color_ceil;
+            }
+
+            // Render the upper texture
+            if (y_upper < y_hi) {
+                f32 texture_z_height = z_ceil - z_upper;
+                RenderPatchColumn(pixels, x, y_upper, y_ceil, y_upper, y_hi, x_along_texture,
+                                  side_info->texture_info_upper.x_offset,
+                                  side_info->texture_info_upper.y_offset, texture_z_height,
+                                  patches[side_info->texture_info_upper.texture_id], palette,
+                                  colormap, render_data);
+                y_hi = y_upper;
+            }
+
+            // Render the floor below the lower texture
+            while (y_lo < y_floor) {
+                y_lo++;
+                pixels[(y_lo * render_data.screen_size_x) + x] = render_data.color_floor;
+            }
+
+            // Render the lower texture
+            if (y_lower > y_lo) {
+                f32 texture_z_height = z_lower - z_floor;
+                RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, y_lower, x_along_texture,
+                                  side_info->texture_info_lower.x_offset,
+                                  side_info->texture_info_lower.y_offset, texture_z_height,
+                                  patches[side_info->texture_info_lower.texture_id], palette,
+                                  colormap, render_data);
+                y_lo = y_lower;
+            }
+
+            // Recurse if the side is passable.
+            if (is_passable) {
+                RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
+                                 colormaps, render_data, pos_next, dir, qe_dual, x, y_lo, y_hi,
+                                 cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
+            } else {
+                // The side info has a solid wall.
+                f32 texture_z_height = z_upper - z_lower;
+                RenderPatchColumn(pixels, x, y_lower, y_upper, y_lo, y_hi, x_along_texture,
+                                  side_info->texture_info_middle.x_offset,
+                                  side_info->texture_info_middle.y_offset, texture_z_height,
+                                  patches[side_info->texture_info_middle.texture_id], palette,
+                                  colormap, render_data);
+            }
+        } else {
+            // Failed to get side_info.
+            // If this is a normal edge, recurse as long as it is not the boundary edge
+            if (!mesh.IsBoundaryEdge(qe_side)) {
+                RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
+                                 colormaps, render_data, pos_next, dir, qe_dual, x, y_lo, y_hi,
+                                 cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
 void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
                  const CameraState& camera, const std::vector<doom::Patch>& patches,
                  const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
                  const RenderData& render_data) {
-    const core::DelaunayMesh mesh = game_map.GetMesh();
-
     // Camera data
     if (!core::IsValid(camera.qe)) {
         return;
     }
 
-    f32 half_screen_size = render_data.screen_size_y / 2.0f;
     f32 screen_size_y_over_fov_y = render_data.screen_size_y / camera.fov.y;
-
-    u32 color_ceil = 0xFF222222;
-    u32 color_floor = 0xFF444444;
-
-    // TODO: Move to color settings or something
-    u8 light_level_sector = 0;            // base light level
-    f32 light_level_per_distance = 3.0f;  // for the 32 colormaps, by increasing darkness
 
     for (u32 x = 0; x < render_data.screen_size_x; x++) {
         // Camera to pixel column
@@ -307,208 +501,17 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
 
         // Distance from the camera to the column
         const f32 cam_len = common::Norm(cp);
+        const f32 cam_len_times_screen_size_y_over_fov_y = cam_len * screen_size_y_over_fov_y;
 
         // Ray direction through this column
         const common::Vec2f dir = cp / cam_len;
 
-        // Start at the camera pos
-        common::Vec2f pos = camera.pos;
-        core::QuarterEdgeIndex qe_dual = camera.qe;
-
-        // The edge vector of the face that we last crossed
-        common::Vec2f v_face = {0.0, 0.0};
-
         // Step through triangles until we hit a solid triangle
-        int y_hi = render_data.screen_size_y;
         int y_lo = -1;
-
-        int n_steps = 0;
-        while (n_steps < 100) {
-            n_steps += 1;
-
-            // Grab the enclosing triangle.
-            auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
-
-            common::Vec2f a = mesh.GetVertex(qe_ab);
-            common::Vec2f b = mesh.GetVertex(qe_bc);
-            common::Vec2f c = mesh.GetVertex(qe_ca);
-
-            // Project our ray out far enough that it would exit our mesh
-            f32 projection_distance = 100.0;  // Ridiculously large
-            common::Vec2f pos_next_delta = projection_distance * dir;
-            common::Vec2f pos_next = pos + pos_next_delta;
-
-            f32 min_interp = INFINITY;
-            core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
-
-            // See if we cross any of the 3 faces for the triangle we are in,
-            // and cross the first segment.
-            const f32 eps = 1e-4;
-            if (common::GetRightHandedness(a, b, pos_next) < -eps) {
-                // We would cross AB
-                common::Vec2f v = b - a;
-                common::Vec2f w = pos - a;
-                float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
-                if (interp_ab < min_interp) {
-                    min_interp = interp_ab;
-                    qe_side = qe_ab;
-                    v_face = v;
-                }
-            }
-            if (common::GetRightHandedness(b, c, pos_next) < -eps) {
-                // We would cross BC
-                common::Vec2f v = c - b;
-                common::Vec2f w = pos - b;
-                float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
-                if (interp_bc < min_interp) {
-                    min_interp = interp_bc;
-                    qe_side = qe_bc;
-                    v_face = v;
-                }
-            }
-            if (common::GetRightHandedness(c, a, pos_next) < -eps) {
-                // We would cross CA
-                common::Vec2f v = a - c;
-                common::Vec2f w = pos - c;
-                float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
-                if (interp_ca < min_interp) {
-                    min_interp = interp_ca;
-                    qe_side = qe_ca;
-                    v_face = v;
-                }
-            }
-
-            // Move to the face.
-            if (core::IsValid(qe_side)) {
-                // Should always be non-null.
-                pos += min_interp * pos_next_delta;
-                qe_dual = mesh.Rot(qe_side);  // The next face
-
-                const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
-                if (side_info != nullptr) {
-                    const f32 ray_len = std::max(common::Norm(pos - camera.pos), 0.01f);
-                    const f32 gamma = cam_len / ray_len * screen_size_y_over_fov_y;
-                    wall_raycast_radius[x] = ray_len;
-
-                    f32 z_ceil = 1.0;
-                    f32 z_upper = 0.8;
-                    f32 z_lower = 0.2;
-                    f32 z_floor = 0.0;
-
-                    const core::Sector* sector = game_map.GetSector(side_info->sector_id);
-                    if (sector != nullptr) {
-                        z_ceil = sector->z_ceil;
-                        z_upper = sector->z_ceil;
-                        z_lower = sector->z_floor;
-                        z_floor = sector->z_floor;
-                    }
-
-                    // Get the height on the other side, if it is passable.
-                    const bool is_passable =
-                        ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
-                    if (is_passable) {
-                        core::QuarterEdgeIndex qe_sym = mesh.Sym(qe_side);
-                        const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
-                        if (side_info_sym != nullptr) {
-                            const core::Sector* sector_sym =
-                                game_map.GetSector(side_info_sym->sector_id);
-                            if (sector_sym != nullptr) {
-                                z_lower = sector_sym->z_floor;
-                                z_upper = sector_sym->z_ceil;
-                            } else {
-                                std::cout << "Unexpected nullptr side_info_sym!" << std::endl;
-                            }
-                        } else {
-                            std::cout << "Unexpected nullptr qe_sym!" << std::endl;
-                        }
-                    }
-
-                    int y_ceil = (int)(half_screen_size + gamma * (z_ceil - camera.z));
-                    int y_upper = (int)(half_screen_size + gamma * (z_upper - camera.z));
-                    int y_lower = (int)(half_screen_size + gamma * (z_lower - camera.z));
-                    int y_floor = (int)(half_screen_size + gamma * (z_floor - camera.z));
-
-                    // Calculate where along the segment we intersected.
-                    core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
-                    f32 v_face_len = common::Norm(v_face);
-                    f32 x_along_texture =
-                        v_face_len - common::Norm(pos - mesh.GetVertex(qe_face_src));
-
-                    // Determine the light level
-                    u8 colormap_index =
-                        light_level_sector + (u8)(light_level_per_distance * ray_len);
-
-                    // Make faces that run closer to north-south brighter, and faces running closer
-                    // to east-west darker. (cos > 0.7071). We're using the law of cosines.
-                    bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
-                    if (face_is_closer_to_east_west) {
-                        colormap_index += 1;  // darker
-                    } else if (colormap_index > 0) {
-                        colormap_index -= 1;  // lighter
-                    }
-
-                    u8 max_colormap_index = 32 - 1;
-                    colormap_index = std::min(colormap_index, max_colormap_index);
-                    const core::Colormap& colormap = colormaps[colormap_index];
-
-                    // Render the ceiling above the upper texture
-                    while (y_hi > y_ceil) {
-                        y_hi--;
-                        pixels[(y_hi * render_data.screen_size_x) + x] = color_ceil;
-                    }
-
-                    // Render the upper texture
-                    if (y_upper < y_hi) {
-                        f32 texture_z_height = z_ceil - z_upper;
-                        RenderPatchColumn(pixels, x, y_upper, y_ceil, y_upper, y_hi,
-                                          x_along_texture, side_info->texture_info_upper.x_offset,
-                                          side_info->texture_info_upper.y_offset, texture_z_height,
-                                          patches[side_info->texture_info_upper.texture_id],
-                                          palette, colormap, render_data);
-                        y_hi = y_upper;
-                    }
-
-                    // Render the floor below the lower texture
-                    while (y_lo < y_floor) {
-                        y_lo++;
-                        pixels[(y_lo * render_data.screen_size_x) + x] = color_floor;
-                    }
-
-                    // Render the lower texture
-                    if (y_lower > y_lo) {
-                        f32 texture_z_height = z_lower - z_floor;
-                        RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, y_lower,
-                                          x_along_texture, side_info->texture_info_lower.x_offset,
-                                          side_info->texture_info_lower.y_offset, texture_z_height,
-                                          patches[side_info->texture_info_lower.texture_id],
-                                          palette, colormap, render_data);
-                        y_lo = y_lower;
-                    }
-
-                    // Continue on with our projection if the side is passable.
-                    if (is_passable) {
-                        continue;
-                    }
-
-                    // The side info has a solid wall.
-                    f32 texture_z_height = z_upper - z_lower;
-                    RenderPatchColumn(pixels, x, y_lower, y_upper, y_lo, y_hi, x_along_texture,
-                                      side_info->texture_info_middle.x_offset,
-                                      side_info->texture_info_middle.y_offset, texture_z_height,
-                                      patches[side_info->texture_info_middle.texture_id], palette,
-                                      colormap, render_data);
-
-                    break;
-                }
-
-                // Also break if it is the boundary
-                if (mesh.IsBoundaryEdge(qe_side)) {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
+        int y_hi = render_data.screen_size_y;
+        RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette, colormaps,
+                         render_data, camera.pos, dir, camera.qe, x, y_lo, y_hi,
+                         cam_len_times_screen_size_y_over_fov_y, 0);
     }
 }
 
@@ -670,6 +673,11 @@ int main() {
     render_data.n_pixels_per_world_unit = 64;
     render_data.screen_size_x = player_window_data.screen_size_x;
     render_data.screen_size_y = player_window_data.screen_size_y;
+    render_data.half_screen_size_y = render_data.screen_size_y / 2.0f;
+    render_data.darkness_per_world_dist = 3.0f;
+    render_data.max_render_steps = 64;
+    render_data.color_ceil = 0xFF222222;
+    render_data.color_floor = 0xFF444444;
 
     // Player view data
     u32 player_view_pixels[player_window_data.screen_size_x *
