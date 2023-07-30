@@ -186,7 +186,8 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
 void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_size_y, int y_lower,
                        int y_upper, int y_lo, int y_hi, f32 x_along_texture,
                        u32 texture_y_offset_base, u32 x_base_offset, u32 y_base_offset,
-                       f32 texture_z_height, const doom::Patch& patch) {
+                       f32 texture_z_height, const doom::Patch& patch, const core::Palette& palette,
+                       const core::Colormap& colormap) {
     // TODO: for now, ignore y_base_offset.
     f32 TILE_WIDTH = 1.0f;
     f32 PIX_PER_DISTANCE = patch.size_x / TILE_WIDTH;
@@ -241,9 +242,10 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
             // Render pixels
             // TODO: @efficiency Extract color more efficiently.
             u8 palette_index = patch.post_data[column_offset];
-            u8 r = core::COLOR_PALETTE[3 * palette_index];
-            u8 g = core::COLOR_PALETTE[3 * palette_index + 1];
-            u8 b = core::COLOR_PALETTE[3 * palette_index + 2];
+            palette_index = colormap.map[palette_index];
+            u8 r = palette.rgbs[3 * palette_index];
+            u8 g = palette.rgbs[3 * palette_index + 1];
+            u8 b = palette.rgbs[3 * palette_index + 2];
             u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
 
             // Render this color for all screen pixels that map to y_patch
@@ -271,7 +273,8 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
 // ------------------------------------------------------------------------------------------------
 void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
                  const core::GameMap& game_map, const CameraState& camera,
-                 const core::OldStyleBitmap& bitmap, const std::vector<doom::Patch>& patches) {
+                 const std::vector<doom::Patch>& patches, const core::Palette& palette,
+                 const std::vector<core::Colormap>& colormaps) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     // Camera data
@@ -286,6 +289,10 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
     u32 TEXTURE_SIZE = 64;
     u32 color_ceil = 0xFF222222;
     u32 color_floor = 0xFF444444;
+
+    // TODO: Move to color settings or something
+    u8 light_level_sector = 0;            // base light level
+    f32 light_level_per_distance = 3.0f;  // for the 32 colormaps, by increasing darkness
 
     for (int x = 0; x < screen_size_x; x++) {
         // Camera to pixel column
@@ -417,6 +424,13 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                     int y_lower = (int)(half_screen_size + gamma * (z_lower - camera.z));
                     int y_floor = (int)(half_screen_size + gamma * (z_floor - camera.z));
 
+                    // Determine the light level
+                    u8 colormap_index =
+                        light_level_sector + (u8)(light_level_per_distance * ray_len);
+                    u8 max_colormap_index = 32 - 1;
+                    colormap_index = std::min(colormap_index, max_colormap_index);
+                    const core::Colormap& colormap = colormaps[colormap_index];
+
                     // Calculate where along the segment we intersected.
                     core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
                     f32 x_along_texture =
@@ -439,7 +453,8 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                                           y_upper, y_hi, x_along_texture, texture_y_offset_base,
                                           side_info->texture_info_upper.x_offset,
                                           side_info->texture_info_upper.y_offset, texture_z_height,
-                                          patches[side_info->texture_info_upper.texture_id]);
+                                          patches[side_info->texture_info_upper.texture_id],
+                                          palette, colormap);
                         y_hi = y_upper;
                     }
 
@@ -458,7 +473,8 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                                           y_lo, y_lower, x_along_texture, texture_y_offset_base,
                                           side_info->texture_info_lower.x_offset,
                                           side_info->texture_info_lower.y_offset, texture_z_height,
-                                          patches[side_info->texture_info_lower.texture_id]);
+                                          patches[side_info->texture_info_lower.texture_id],
+                                          palette, colormap);
                         y_lo = y_lower;
                     }
 
@@ -475,7 +491,8 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                                       y_lo, y_hi, x_along_texture, texture_y_offset_base,
                                       side_info->texture_info_middle.x_offset,
                                       side_info->texture_info_middle.y_offset, texture_z_height,
-                                      patches[side_info->texture_info_middle.texture_id]);
+                                      patches[side_info->texture_info_middle.texture_id], palette,
+                                      colormap);
 
                     break;
                 }
@@ -511,13 +528,13 @@ void ImportGameData(core::GameMap* map) {
 }
 
 // ------------------------------------------------------------------------------------------------
-void ExportGameData(const core::GameMap& map) {
+void ExportGameData(const core::GameMap& map, const std::vector<core::Palette> palettes) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
 
     core::AssetsExporter exporter;
     std::cout << "Exporting core data" << std::endl;
-    exporter.AddEntry(core::ExportColorPalette());
+    exporter.AddEntry(core::ExportPalettes(palettes));
 
     std::cout << "Exporting map data" << std::endl;
     bool succeeded = map.Export(&exporter);
@@ -611,7 +628,12 @@ int main() {
         core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
     ASSERT(doom_assets, "Failed to load DOOM Assets");
 
+    std::vector<core::Palette> palettes = doom::ParseDoomPalettes(doom_assets);
+    ASSERT(palettes.size() == doom::kNumDoomPalettes, "Failed to load DOOM palettes");
+    std::vector<core::Colormap> colormaps = doom::ParseDoomColormaps(doom_assets);
+    ASSERT(colormaps.size() == doom::kNumDoomColormaps, "Failed to load DOOM colormaps");
     std::vector<doom::Patch> patches = doom::ParseDoomTextures(doom_assets);
+    ASSERT(patches.size() > 0, "Failed to load DOOM patches");
 
     // Create our map
     core::GameMap map;
@@ -752,7 +774,7 @@ int main() {
 
             } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
                 if (event.key.keysym.sym == SDLK_o) {
-                    ExportGameData(map);
+                    // ExportGameData(map, palettes);
                 } else if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
                 } else if (event.key.keysym.sym == SDLK_w) {
@@ -1245,7 +1267,8 @@ int main() {
 
             // Render the player view.
             RenderWalls(player_view_pixels, wall_raycast_radius, player_window_data.screen_size_x,
-                        player_window_data.screen_size_y, map, player_cam, bitmap, patches);
+                        player_window_data.screen_size_y, map, player_cam, patches, palettes[0],
+                        colormaps);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);
