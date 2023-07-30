@@ -424,19 +424,28 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                     int y_lower = (int)(half_screen_size + gamma * (z_lower - camera.z));
                     int y_floor = (int)(half_screen_size + gamma * (z_floor - camera.z));
 
+                    // Calculate where along the segment we intersected.
+                    core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
+                    f32 v_face_len = common::Norm(v_face);
+                    f32 x_along_texture =
+                        v_face_len - common::Norm(pos - mesh.GetVertex(qe_face_src));
+
                     // Determine the light level
                     u8 colormap_index =
                         light_level_sector + (u8)(light_level_per_distance * ray_len);
+
+                    // Make faces that run closer to north-south brighter, and faces running closer
+                    // to east-west darker. (cos > 0.7071). We're using the law of cosines.
+                    bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
+                    if (face_is_closer_to_east_west) {
+                        colormap_index += 1;  // darker
+                    } else if (colormap_index > 0) {
+                        colormap_index -= 1;  // lighter
+                    }
+
                     u8 max_colormap_index = 32 - 1;
                     colormap_index = std::min(colormap_index, max_colormap_index);
                     const core::Colormap& colormap = colormaps[colormap_index];
-
-                    // Calculate where along the segment we intersected.
-                    core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
-                    f32 x_along_texture =
-                        common::Norm(v_face) - common::Norm(pos - mesh.GetVertex(qe_face_src));
-                    u32 texture_x_offset_base =
-                        (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? TEXTURE_SIZE : 0;
 
                     // Render the ceiling above the upper texture
                     while (y_hi > y_ceil) {
@@ -528,13 +537,15 @@ void ImportGameData(core::GameMap* map) {
 }
 
 // ------------------------------------------------------------------------------------------------
-void ExportGameData(const core::GameMap& map, const std::vector<core::Palette> palettes) {
+void ExportGameData(const core::GameMap& map, const std::vector<core::Palette> palettes,
+                    const std::vector<core::Colormap> colormaps) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
 
     core::AssetsExporter exporter;
     std::cout << "Exporting core data" << std::endl;
     exporter.AddEntry(core::ExportPalettes(palettes));
+    exporter.AddEntry(core::ExportColormaps(colormaps));
 
     std::cout << "Exporting map data" << std::endl;
     bool succeeded = map.Export(&exporter);
@@ -1116,10 +1127,6 @@ int main() {
 
             core::SideInfo* side_info = map.GetEditableSideInfo(selected_edge_index);
             if (side_info != nullptr) {
-                if (ImGui::Button((
-                        (side_info->flags & core::kSideInfoFlag_DARK) > 0 ? "Dark" : "Not Dark"))) {
-                    side_info->flags ^= core::kSideInfoFlag_DARK;  // toggle
-                }
                 if (ImGui::Button(((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0
                                        ? "Passable"
                                        : "Not Passable"))) {

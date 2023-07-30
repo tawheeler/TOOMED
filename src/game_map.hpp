@@ -25,7 +25,6 @@ struct TextureInfo {
     // TODO: scale
 };
 
-constexpr u16 kSideInfoFlag_DARK = 1;
 constexpr u16 kSideInfoFlag_PASSABLE = 2;  // The side info can be traversed
 
 // The information associated with one side of an edge between vertices in the map.
