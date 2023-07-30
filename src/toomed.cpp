@@ -40,8 +40,9 @@ struct CameraState {
     common::Vec2f pos;
     common::Vec2f dir;
     common::Vec2f vel;
-    f32 height;  // height above the floor
-    f32 z;       // absolute height in global
+    common::Vec2f fov;  // field of vew
+    f32 height;         // height above the floor
+    f32 z;              // absolute height in global
     f32 omega;
     core::QuarterEdgeIndex qe;
 };
@@ -183,16 +184,20 @@ void RenderGrid(SDL_Renderer* renderer, u32 rgba, f32 line_spacing, const common
 }
 
 // ------------------------------------------------------------------------------------------------
-void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_size_y, int y_lower,
-                       int y_upper, int y_lo, int y_hi, f32 x_along_texture,
-                       u32 texture_y_offset_base, u32 x_base_offset, u32 y_base_offset,
-                       f32 texture_z_height, const doom::Patch& patch, const core::Palette& palette,
-                       const core::Colormap& colormap) {
-    // TODO: for now, ignore y_base_offset.
-    f32 TILE_WIDTH = 1.0f;
-    f32 PIX_PER_DISTANCE = patch.size_x / TILE_WIDTH;
+struct RenderData {
+    u32 n_pixels_per_world_unit;  // Number of pixels across a texture on a 1 unit span should be.
+};
 
-    u32 texture_x = ((int)(PIX_PER_DISTANCE * x_along_texture) + x_base_offset) % patch.size_x;
+void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_size_y, int y_lower,
+                       int y_upper, int y_lo, int y_hi, f32 x_along_texture, u32 x_base_offset,
+                       u32 y_base_offset, f32 texture_z_height, const doom::Patch& patch,
+                       const core::Palette& palette, const core::Colormap& colormap,
+                       const RenderData& render_data) {
+    // TODO: for now, ignore y_base_offset.
+
+    // The index into the patch of the column that we want to draw.
+    u32 x_patch = ((int)(render_data.n_pixels_per_world_unit * x_along_texture) + x_base_offset) %
+                  patch.size_x;
 
     // y_lower = screen y coordinate of bottom of column (can exceed screen bounds)
     // y_upper = screen y coordinate of top of column (can exceed screen bounds)
@@ -223,7 +228,7 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
     f32 y_patch = 0.0f;
     f32 y_screen = y_upper;
 
-    u32 column_offset = patch.column_offsets[texture_x];
+    u32 column_offset = patch.column_offsets[x_patch];
     while (patch.post_data[column_offset] != 0xFF) {
         u8 y_patch_delta = patch.post_data[column_offset];
         column_offset++;
@@ -274,19 +279,17 @@ void RenderPatchColumn(u32* pixels, int x_screen, int screen_size_x, int screen_
 void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int screen_size_y,
                  const core::GameMap& game_map, const CameraState& camera,
                  const std::vector<doom::Patch>& patches, const core::Palette& palette,
-                 const std::vector<core::Colormap>& colormaps) {
+                 const std::vector<core::Colormap>& colormaps, const RenderData& render_data) {
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     // Camera data
-    common::Vec2f camera_fov = {1.5, 0.84375};
     if (!core::IsValid(camera.qe)) {
         return;
     }
 
     f32 half_screen_size = screen_size_y / 2.0f;
-    f32 screen_size_y_over_fov_y = screen_size_y / camera_fov.y;
+    f32 screen_size_y_over_fov_y = screen_size_y / camera.fov.y;
 
-    u32 TEXTURE_SIZE = 64;
     u32 color_ceil = 0xFF222222;
     u32 color_floor = 0xFF444444;
 
@@ -297,7 +300,7 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
     for (int x = 0; x < screen_size_x; x++) {
         // Camera to pixel column
         const f32 dw =
-            camera_fov.x / 2 - (camera_fov.x * x) / screen_size_x;  // TODO: Precompute once.
+            camera.fov.x / 2 - (camera.fov.x * x) / screen_size_x;  // TODO: Precompute once.
         const common::Vec2f cp = {camera.dir.x - dw * camera.dir.y,
                                   camera.dir.y + dw * camera.dir.x};
 
@@ -456,14 +459,12 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                     // Render the upper texture
                     if (y_upper < y_hi) {
                         f32 texture_z_height = z_ceil - z_upper;
-                        u32 texture_y_offset_base =
-                            side_info->texture_info_upper.texture_id * TEXTURE_SIZE;
                         RenderPatchColumn(pixels, x, screen_size_x, screen_size_y, y_upper, y_ceil,
-                                          y_upper, y_hi, x_along_texture, texture_y_offset_base,
+                                          y_upper, y_hi, x_along_texture,
                                           side_info->texture_info_upper.x_offset,
                                           side_info->texture_info_upper.y_offset, texture_z_height,
                                           patches[side_info->texture_info_upper.texture_id],
-                                          palette, colormap);
+                                          palette, colormap, render_data);
                         y_hi = y_upper;
                     }
 
@@ -476,14 +477,12 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
                     // Render the lower texture
                     if (y_lower > y_lo) {
                         f32 texture_z_height = z_lower - z_floor;
-                        u32 texture_y_offset_base =
-                            side_info->texture_info_lower.texture_id * TEXTURE_SIZE;
                         RenderPatchColumn(pixels, x, screen_size_x, screen_size_y, y_floor, y_lower,
-                                          y_lo, y_lower, x_along_texture, texture_y_offset_base,
+                                          y_lo, y_lower, x_along_texture,
                                           side_info->texture_info_lower.x_offset,
                                           side_info->texture_info_lower.y_offset, texture_z_height,
                                           patches[side_info->texture_info_lower.texture_id],
-                                          palette, colormap);
+                                          palette, colormap, render_data);
                         y_lo = y_lower;
                     }
 
@@ -494,14 +493,12 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, int screen_size_x, int s
 
                     // The side info has a solid wall.
                     f32 texture_z_height = z_upper - z_lower;
-                    u32 texture_y_offset_base =
-                        side_info->texture_info_middle.texture_id * TEXTURE_SIZE;
                     RenderPatchColumn(pixels, x, screen_size_x, screen_size_y, y_lower, y_upper,
-                                      y_lo, y_hi, x_along_texture, texture_y_offset_base,
+                                      y_lo, y_hi, x_along_texture,
                                       side_info->texture_info_middle.x_offset,
                                       side_info->texture_info_middle.y_offset, texture_z_height,
                                       patches[side_info->texture_info_middle.texture_id], palette,
-                                      colormap);
+                                      colormap, render_data);
 
                     break;
                 }
@@ -632,7 +629,7 @@ int main() {
     // Extract our wall textures
     auto bitmap_data_opt = julia_assets->FindEntryData("textures");
     ASSERT(bitmap_data_opt, "Failed to find texture data");
-    core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
+    // core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
 
     // Load our DOOM assets
     std::unique_ptr<core::WadImporter> doom_assets =
@@ -667,8 +664,12 @@ int main() {
     CameraState player_cam = {};
     player_cam.pos = {5.0, 5.0};
     player_cam.dir = {1.0, 0.0};
+    player_cam.fov = {1.5, 0.84375};
     player_cam.height = 0.4f;
     player_cam.qe = map.GetMesh().GetEnclosingTriangle(player_cam.pos);
+
+    RenderData render_data;
+    render_data.n_pixels_per_world_unit = 64;
 
     // Player view data
     u32 player_view_pixels[player_window_data.screen_size_x *
@@ -1275,7 +1276,7 @@ int main() {
             // Render the player view.
             RenderWalls(player_view_pixels, wall_raycast_radius, player_window_data.screen_size_x,
                         player_window_data.screen_size_y, map, player_cam, patches, palettes[0],
-                        colormaps);
+                        colormaps, render_data);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);
