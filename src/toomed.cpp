@@ -801,20 +801,20 @@ int main() {
     ASSERT(bitmap_data_opt, "Failed to find texture data");
     // core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
 
-    // Load our DOOM assets
-    std::unique_ptr<core::WadImporter> doom_assets =
-        core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
-    ASSERT(doom_assets, "Failed to load DOOM Assets");
+    // // Load our DOOM assets
+    // std::unique_ptr<core::WadImporter> doom_assets =
+    //     core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
+    // ASSERT(doom_assets, "Failed to load DOOM Assets");
 
-    // Create our render assets
+    // // Create our render assets
     core::RenderAssets render_assets;
-    render_assets.palettes = doom::ParseDoomPalettes(doom_assets);
-    ASSERT(render_assets.palettes.size() == doom::kNumDoomPalettes, "Failed to load DOOM palettes");
-    render_assets.colormaps = doom::ParseDoomColormaps(doom_assets);
-    ASSERT(render_assets.colormaps.size() == doom::kNumDoomColormaps,
-           "Failed to load DOOM colormaps");
-    render_assets.patches = doom::ParseDoomTextures(doom_assets);
-    ASSERT(render_assets.patches.size() > 0, "Failed to load DOOM patches");
+    // render_assets.palettes = doom::ParseDoomPalettes(doom_assets);
+    // ASSERT(render_assets.palettes.size() == doom::kNumDoomPalettes, "Failed to load DOOM
+    // palettes"); render_assets.colormaps = doom::ParseDoomColormaps(doom_assets);
+    // ASSERT(render_assets.colormaps.size() == doom::kNumDoomColormaps,
+    //        "Failed to load DOOM colormaps");
+    // render_assets.patches = doom::ParseDoomTextures(doom_assets);
+    // ASSERT(render_assets.patches.size() > 0, "Failed to load DOOM patches");
 
     // Create our map
     core::GameMap map;
