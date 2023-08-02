@@ -19,7 +19,7 @@ const std::string kAssetEntrySideInfos = "side_infos";
 const std::string kAssetEntrySectors = "sectors";
 
 struct TextureInfo {
-    u16 texture_id;  // Index in the texture atlas
+    u16 texture_id;  // Index in the texture atlas. Id 0 indicates not to draw anything.
     i16 x_offset;    // Texture x offset
     i16 y_offset;    // Texture y offset
     // TODO: scale
@@ -32,7 +32,7 @@ constexpr u16 kSideInfoFlag_PASSABLE = 2;  // The side info can be traversed
 // side of A->B.
 
 // A solid sideinfo does not set its lower or upper texture, and thus only has the middle
-// texture, z_floor, and z_ceil.
+// texture.
 
 // A passable side info's middle texture is not displayed.
 
@@ -43,6 +43,8 @@ struct SideInfo {
     TextureInfo texture_info_middle;  // Texture displayed if the wall is solid
     TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases
     QuarterEdgeIndex qe;              // The primary quarter edge that represents A->B
+
+    QuarterEdgeIndex qe_portal;       // The sideinfo for the other side of a portal
 };
 
 // All side infos refer to a sector to contain the corresponding floor/ceiling information.

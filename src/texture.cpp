@@ -1,5 +1,9 @@
 #include "texture.hpp"
 
+#include <cstring>
+#include <iostream>
+#include <sstream>
+
 namespace doom {
 
 // ------------------------------------------------------------------------------------------------
@@ -119,7 +123,7 @@ std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& i
 
     // First, parse PNAMES (https://doomwiki.org/wiki/PNAMES)
     const u8* pnames_data = *pnames_data_opt;
-    i32 n_map_patches = *(i32*)(pnames_data);  // not really used
+    // i32 n_map_patches = *(i32*)(pnames_data);  // not really used
 
     // Parse the texture data (https://doomwiki.org/wiki/TEXTURE1_and_TEXTURE2)
     const u8* texture_data = *texture_data_opt;
@@ -183,7 +187,7 @@ std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& i
             // Render the patch
             const u8* patch_data = *patch_opt;
             u16 patch_size_x = *(u16*)(patch_data);
-            u16 patch_size_y = *(u16*)(patch_data + 2);
+            // u16 patch_size_y = *(u16*)(patch_data + 2); // unused
             // i16 offset_x = *(u16*)(patch_data + 4); // unused
             // i16 offset_y = *(u16*)(patch_data + 6); // unused
             for (u16 patch_x = 0; patch_x < patch_size_x; patch_x++) {
@@ -217,6 +221,54 @@ std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& i
     }
 
     return patches;
+}
+
+// ------------------------------------------------------------------------------------------------
+core::AssetsExporterEntry ExportPatches(const std::vector<Patch>& patches) {
+    core::AssetsExporterEntry entry;
+    entry.SetName(kAssetEntryPatches);
+
+    // --------------------------------------
+    // Serialize the content
+    std::stringstream buffer;
+
+    // Serialize the counts
+    u32 n_patches = patches.size();
+    buffer.write(reinterpret_cast<const char*>(&n_patches), sizeof(u32));
+
+    // Serialize the patches
+    for (const Patch& patch : patches) {
+        // Write the name in 16 chars
+        size_t n_char_bytes = 16ul;
+        size_t n_bytes_in_name = patch.name.size();
+        size_t n_bytes_of_name_to_write = std::min(n_char_bytes, n_bytes_in_name);
+        buffer.write(patch.name.c_str(), n_bytes_of_name_to_write);
+        while (n_bytes_of_name_to_write < n_char_bytes) {
+            buffer.put(0);
+            n_bytes_of_name_to_write++;
+        }
+
+        // Write the patch header data
+        buffer.write(reinterpret_cast<const char*>(&patch.size_x), sizeof(u16));
+        buffer.write(reinterpret_cast<const char*>(&patch.size_y), sizeof(u16));
+        buffer.write(reinterpret_cast<const char*>(&patch.origin_x), sizeof(u16));
+        buffer.write(reinterpret_cast<const char*>(&patch.origin_y), sizeof(u16));
+
+        // Write the column offsets
+        u16 n_column_offsets = patch.column_offsets.size();
+        buffer.write(reinterpret_cast<const char*>(&n_column_offsets), sizeof(u16));
+        buffer.write(reinterpret_cast<const char*>(patch.column_offsets.data()),
+                     n_column_offsets * sizeof(u32));
+
+        // Write the post data
+        buffer.write(reinterpret_cast<const char*>(patch.post_data.data()),
+                     patch.post_data.size() * sizeof(u8));
+    }
+
+    // --------------------------------------
+    entry.SetData(buffer.str());
+
+    return entry;
 }
 
 }  // namespace doom

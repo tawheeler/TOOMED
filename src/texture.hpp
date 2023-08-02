@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "assets_exporter.hpp"
 #include "typedefs.hpp"
 #include "wad_importer.hpp"
 
@@ -65,5 +66,9 @@ class Texture {
 };
 
 std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& importer);
+
+// The name of the exported asset entry.
+const std::string kAssetEntryPatches = "patches";
+core::AssetsExporterEntry ExportPatches(const std::vector<Patch>& patches);
 
 }  // namespace doom

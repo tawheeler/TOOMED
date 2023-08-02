@@ -82,6 +82,7 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
     const f32 kPlayerMaxOmega = 5.0;
     const f32 kAirFriction = 4.0;
     const f32 kAirFrictionRot = 4.0;
+    const f32 kSlidingFriction = 0.95;
 
     // Note: Speed is in the global frame
     camera_state->vel.x += (camera_state->dir.x * input_dir.x - camera_state->dir.y * input_dir.y) *
@@ -103,10 +104,130 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
     }
 
     // ------------------------------------------------------------
-    // Move the player. Ignore collisions for now.
+    // Move the player.
     const core::DelaunayMesh& mesh = game_map.GetMesh();
-    camera_state->pos += dt * camera_state->vel;
-    camera_state->qe = mesh.GetEnclosingTriangle(camera_state->pos, camera_state->qe);
+
+    f32 dt_remaining = dt;
+    while (dt_remaining > 0.0f) {
+        common::Vec2f pos_delta = dt_remaining * camera_state->vel;
+        common::Vec2f pos_next = camera_state->pos + pos_delta;
+
+        // Exit if the step is too small, to avoid math problems.
+        if (SqNorm(pos_delta) < 1e-6) {
+            break;
+        }
+
+        // Check to see if we cross over any mesh edges.
+        auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(camera_state->qe);
+
+        common::Vec2f a = mesh.GetVertex(qe_ab);
+        common::Vec2f b = mesh.GetVertex(qe_bc);
+        common::Vec2f c = mesh.GetVertex(qe_ca);
+
+        // The fraction of the distance we will move
+        f32 interp = 1.0f;
+        core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
+        common::Vec2f v_face = {0.0, 0.0};
+
+        const f32 eps = 1e-4;
+        if (common::GetRightHandedness(a, b, pos_next) < -eps) {
+            // We would cross AB
+            common::Vec2f v = b - a;
+            common::Vec2f w = camera_state->pos - a;
+            float interp_ab = common::Cross(v, w) / common::Cross(pos_delta, v);
+            if (interp_ab < interp) {
+                interp = interp_ab;
+                qe_side = qe_ab;
+                v_face = v;
+            }
+        }
+        if (common::GetRightHandedness(b, c, pos_next) < -eps) {
+            // We would cross BC
+            common::Vec2f v = c - b;
+            common::Vec2f w = camera_state->pos - b;
+            float interp_bc = common::Cross(v, w) / common::Cross(pos_delta, v);
+            if (interp_bc < interp) {
+                interp = interp_bc;
+                qe_side = qe_bc;
+                v_face = v;
+            }
+        }
+        if (common::GetRightHandedness(c, a, pos_next) < -eps) {
+            // We would cross CA
+            common::Vec2f v = a - c;
+            common::Vec2f w = camera_state->pos - c;
+            float interp_ca = common::Cross(v, w) / common::Cross(pos_delta, v);
+            if (interp_ca < interp) {
+                interp = interp_ca;
+                qe_side = qe_ca;
+                v_face = v;
+            }
+        }
+
+        // Move the player
+        // If we would have crossed any edge, this merely moves us up to the boundary instead
+        camera_state->pos += interp * pos_delta;
+        dt_remaining *= (1.0f - interp);
+        dt_remaining -= 1e-5;  // eps factor for safety
+
+        if (core::IsValid(qe_side)) {
+            // We would have crossed into another triangle.
+
+            // Determine whether to continue on or stop at the edge.
+            bool stop_at_edge = false;
+            bool is_portal = false;
+            const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
+            if (side_info != nullptr) {
+                // TODO: Prevent proceeding if the z-difference is sufficiently large
+                const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
+                stop_at_edge = !is_passable;
+                is_portal = is_passable && core::IsValid(side_info->qe_portal);
+            }
+
+            if (is_portal) {
+                // Calculate where along the segment we intersected.
+                f32 v_face_len = common::Norm(v_face);
+                f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
+
+                // Update our quarter edge
+                camera_state->qe = mesh.Tor(side_info->qe_portal);
+
+                // The vector along the new face is
+                common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
+                common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
+                common::Vec2f dc = d - c;
+                f32 dc_len = common::Norm(dc);
+
+                // Our new position is:
+                camera_state->pos = c + (x_along_texture / dc_len) * dc;
+
+                // A -> B is v_face (and v_face_len)
+                // P -> Q (our ray) is dir
+                f32 cos_theta = common::Dot(v_face, camera_state->dir) / v_face_len;
+                f32 sin_theta = abs(common::Cross(v_face, camera_state->dir) / v_face_len);
+
+                // Now to get the new direction, we need to rotate out of the new face.
+                camera_state->dir = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
+                                     (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+
+                // We also need to rotate our speed
+                // (For now, just zero it out)
+                camera_state->vel = {0.0, 0.0};
+            } else if (stop_at_edge) {
+                // The new triangle is solid, so do not change triangles.
+                // Lose all velocity into the boundary surface.
+                // This results in the vector along the face.
+                camera_state->vel = VectorProjection(camera_state->vel, v_face);
+                camera_state->vel.x *= kSlidingFriction;
+                camera_state->vel.y *= kSlidingFriction;
+            } else {
+                // Accept the new triangle
+                camera_state->qe = mesh.Rot(qe_side);
+            }
+        }
+    }
+
+    // camera_state->qe = mesh.GetEnclosingTriangle(camera_state->pos, camera_state->qe);
 
     // Update height
     const core::SideInfo* side_info = game_map.GetSideInfo(mesh.Rot(camera_state->qe));
@@ -223,10 +344,6 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
     // the number of (continuous) patch pixels y changes per screen pixel
     f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes up by 1, y_patch goes up this much
     f32 y_screen_step_per_patch_pixel = 1.0f / m;
-
-    if (y_patch_step_per_screen_pixel < -1.1f) {
-        y_patch_step_per_screen_pixel = m;
-    }
 
     // The (continuous) texture y pixel we are at at the top of the rendered image
     // f32 y_patch = m * (2 * y_upper - y_hi) + b;
@@ -348,17 +465,18 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
         }
     }
 
-    // Move to the face.
     if (core::IsValid(qe_side)) {
-        // Should always be non-null.
+        // Move to the face
         pos_next = pos + min_interp * pos_next_delta;
-        qe_dual = mesh.Rot(qe_side);  // The next face
+        qe_dual = mesh.Rot(qe_side);
+
+        // Accumulate distance travelled
+        wall_raycast_radius[x] += min_interp * projection_distance;
 
         const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
         if (side_info != nullptr) {
-            const f32 ray_len = std::max(common::Norm(pos_next - camera.pos), 0.01f);
+            const f32 ray_len = std::max(wall_raycast_radius[x], 0.01f);
             const f32 gamma = cam_len_times_screen_size_y_over_fov_y / ray_len;
-            wall_raycast_radius[x] = ray_len;
 
             f32 z_ceil = 1.0;
             f32 z_upper = 0.8;
@@ -375,9 +493,12 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
 
             // Get the height on the other side, if it is passable.
             const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
+            bool is_portal = core::IsValid(side_info->qe_portal);
             if (is_passable) {
-                core::QuarterEdgeIndex qe_sym = mesh.Sym(qe_side);
+                core::QuarterEdgeIndex qe_sym =
+                    is_portal ? side_info->qe_portal : mesh.Sym(qe_side);
                 const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
+
                 if (side_info_sym != nullptr) {
                     const core::Sector* sector_sym = game_map.GetSector(side_info_sym->sector_id);
                     if (sector_sym != nullptr) {
@@ -398,9 +519,8 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
             int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
 
             // Calculate where along the segment we intersected.
-            core::QuarterEdgeIndex qe_face_src = mesh.Tor(qe_dual);
             f32 v_face_len = common::Norm(v_face);
-            f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_face_src));
+            f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
 
             // Determine the light level
             u8 light_level_sector = 0;  // base light level (TODO: Move to sector data.)
@@ -456,8 +576,34 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
 
             // Recurse if the side is passable.
             if (is_passable) {
+                common::Vec2f dir_next = dir;
+
+                if (is_portal) {
+                    qe_dual = mesh.Tor(side_info->qe_portal);
+
+                    // do the transform on pos_next and dir
+
+                    // The vector along the new face is
+                    common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
+                    common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
+                    common::Vec2f dc = d - c;
+                    f32 dc_len = common::Norm(dc);
+
+                    // Our new position is:
+                    pos_next = c + (x_along_texture / dc_len) * dc;
+
+                    // A -> B is v_face (and v_face_len)
+                    // P -> Q (our ray) is dir
+                    f32 cos_theta = common::Dot(v_face, dir) / v_face_len;
+                    f32 sin_theta = abs(common::Cross(v_face, dir) / v_face_len);
+
+                    // Now to get the new direction, we need to rotate out of the new face.
+                    dir_next = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
+                                (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+                }
+
                 RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
-                                 colormaps, render_data, pos_next, dir, qe_dual, x, y_lo, y_hi,
+                                 colormaps, render_data, pos_next, dir_next, qe_dual, x, y_lo, y_hi,
                                  cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
             } else {
                 // The side info has a solid wall.
@@ -485,6 +631,9 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
                  const CameraState& camera, const std::vector<doom::Patch>& patches,
                  const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
                  const RenderData& render_data) {
+    // Zero out the way raycast radius
+    memset(wall_raycast_radius, 0, sizeof(f32) * render_data.screen_size_x);
+
     // Camera data
     if (!core::IsValid(camera.qe)) {
         return;
@@ -536,7 +685,8 @@ void ImportGameData(core::GameMap* map) {
 
 // ------------------------------------------------------------------------------------------------
 void ExportGameData(const core::GameMap& map, const std::vector<core::Palette> palettes,
-                    const std::vector<core::Colormap> colormaps) {
+                    const std::vector<core::Colormap> colormaps,
+                    const std::vector<doom::Patch> patches) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
 
@@ -544,6 +694,7 @@ void ExportGameData(const core::GameMap& map, const std::vector<core::Palette> p
     std::cout << "Exporting core data" << std::endl;
     exporter.AddEntry(core::ExportPalettes(palettes));
     exporter.AddEntry(core::ExportColormaps(colormaps));
+    exporter.AddEntry(doom::ExportPatches(patches));
 
     std::cout << "Exporting map data" << std::endl;
     bool succeeded = map.Export(&exporter);
@@ -794,9 +945,11 @@ int main() {
 
             } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
                 if (event.key.keysym.sym == SDLK_o) {
-                    // ExportGameData(map, palettes);
+                    ExportGameData(map, palettes, colormaps, patches);
                 } else if (event.key.keysym.sym == SDLK_i) {
                     ImportGameData(&map);
+                    player_cam.qe = map.GetMesh().GetEnclosingTriangle(
+                        player_cam.pos);  // TODO: Move somewhere better
                 } else if (event.key.keysym.sym == SDLK_w) {
                     keyboard_state.w = core::KeyboardKeyState_Pressed;
                 } else if (event.key.keysym.sym == SDLK_s) {
@@ -1205,6 +1358,47 @@ int main() {
                 ImGui::InputScalar("lower y_offset", ImGuiDataType_S16,
                                    (void*)(&side_info->texture_info_lower.y_offset),
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
+
+                ImGui::Separator();
+
+                if (ImGui::InputScalar("portal qe index", ImGuiDataType_U64,
+                                       (void*)(&side_info->qe_portal.i), (void*)(NULL),
+                                       (void*)(NULL), "%lu",
+                                       ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    // Ensure the other quarter edge exists, that both are passable, and that both
+                    // are the same length.
+                    core::SideInfo* side_info_portal =
+                        map.GetEditableSideInfo(side_info->qe_portal);
+                    if (side_info->qe == side_info->qe_portal || side_info_portal == nullptr) {
+                        // Invalid!
+                        side_info->qe_portal = {core::kInvalidIndex};
+                        std::cout << "Both are equal (" << (side_info->qe == side_info->qe_portal)
+                                  << ") or side_info_portal is null ("
+                                  << (side_info_portal == nullptr) << ")" << std::endl;
+                    } else {
+                        // Check for same length
+                        auto sqdist_ab = common::SqNorm(mesh.GetVertex(side_info->qe) -
+                                                        mesh.GetVertex(mesh.Sym(side_info->qe)));
+                        auto sqdist_cd =
+                            common::SqNorm(mesh.GetVertex(side_info->qe_portal) -
+                                           mesh.GetVertex(mesh.Sym(side_info->qe_portal)));
+                        if (abs(sqdist_ab - sqdist_cd) > 0.1) {
+                            std::cout << "Not of the same length! " << sqdist_ab << " vs. "
+                                      << sqdist_cd << std::endl;
+                            side_info->qe_portal = {core::kInvalidIndex};
+                        } else {
+                            // Ensure both are passable. Note that the far side may or may not be
+                            // passable.
+                            side_info->flags |= core::kSideInfoFlag_PASSABLE;
+                            side_info_portal->flags |= core::kSideInfoFlag_PASSABLE;
+
+                            // Ensure the other one is set to the same value.
+                            side_info_portal->qe_portal = side_info->qe;
+
+                            std::cout << "Connected portals!" << std::endl;
+                        }
+                    }
+                }
 
                 ImGui::Separator();
 

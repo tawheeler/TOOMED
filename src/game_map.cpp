@@ -346,6 +346,7 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
         side_info.texture_info_lower = exported_side_info.texture_info_lower;
         side_info.texture_info_middle = exported_side_info.texture_info_middle;
         side_info.texture_info_upper = exported_side_info.texture_info_upper;
+        side_info.qe_portal = {kInvalidIndex};
         // NOTE: quarter edge index not yet set.
 
         side_infos.emplace_back(side_info);
@@ -364,6 +365,17 @@ bool GameMap::LoadSideInfos(const std::string& name, const AssetsExporter& expor
             // Ensure that the quarter edges associated with any side info are solid.
             mesh_.ConstrainEdge(side_info.qe);
         }
+
+        // u16 portal_side_info_index = *(u16*)(data + offset);
+        // offset += sizeof(u16);
+        // if (side_info_index != std::numeric_limits<u16>::max()) {
+        //     SideInfo& side_info = side_infos[side_info_index];
+        //     side_info.qe = {i};
+        //     side_infos_[side_info.qe] = side_info;
+
+        //     // Ensure that the quarter edges associated with any side info are solid.
+        //     mesh_.ConstrainEdge(side_info.qe);
+        // }
     }
 
     return true;
