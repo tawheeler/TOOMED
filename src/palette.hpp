@@ -17,8 +17,11 @@ struct Palette {
 // The name of the exported asset entry.
 const std::string kAssetEntryPalettes = "palettes";
 
-// Export the palettes.
+// Export the palettes
 AssetsExporterEntry ExportPalettes(const std::vector<Palette>& palettes);
+
+// Import the palettes
+bool ImportPalettes(std::vector<Palette>* palettes, const AssetsExporter& exporter);
 
 // The DOOM colormaps.
 // Each colormap maps palette indices (u8's) to new palette indices.
@@ -31,8 +34,11 @@ struct Colormap {
 // The name of the exported asset entry.
 const std::string kAssetEntryColormaps = "colormaps";
 
-// Export the colormaps.
+// Export the colormaps
 AssetsExporterEntry ExportColormaps(const std::vector<Colormap>& colormaps);
+
+// Import the colormaps
+bool ImportColormaps(std::vector<Colormap>* colormaps, const AssetsExporter& exporter);
 
 }  // namespace core
 

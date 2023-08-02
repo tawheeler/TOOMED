@@ -261,14 +261,69 @@ core::AssetsExporterEntry ExportPatches(const std::vector<Patch>& patches) {
                      n_column_offsets * sizeof(u32));
 
         // Write the post data
-        buffer.write(reinterpret_cast<const char*>(patch.post_data.data()),
-                     patch.post_data.size() * sizeof(u8));
+        u32 n_bytes_post_data = patch.post_data.size();
+        buffer.write(reinterpret_cast<const char*>(&n_bytes_post_data), sizeof(u32));
+        buffer.write(reinterpret_cast<const char*>(patch.post_data.data()), n_bytes_post_data);
     }
 
     // --------------------------------------
     entry.SetData(buffer.str());
 
     return entry;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool ImportPatches(std::vector<doom::Patch>* patches, const core::AssetsExporter& exporter) {
+    const core::AssetsExporterEntry* entry = exporter.FindEntry(kAssetEntryPatches);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << kAssetEntryPatches << std::endl;
+        return false;
+    }
+
+    u32 offset = 0;
+    const u8* data = entry->data.data();
+
+    patches->clear();
+
+    u32 n_patches = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    patches->resize(n_patches);
+    for (u32 i = 0; i < n_patches; i++) {
+        // Read the 16-char name
+        patches->at(i).name =
+            std::string((char*)(data + offset), 16);  // TODO: Verify that this works
+        offset += 16;
+
+        // Read the patch header data
+        patches->at(i).size_x = *(u16*)(data + offset);
+        offset += sizeof(u16);
+        patches->at(i).size_y = *(u16*)(data + offset);
+        offset += sizeof(u16);
+        patches->at(i).origin_x = *(u16*)(data + offset);
+        offset += sizeof(u16);
+        patches->at(i).origin_y = *(u16*)(data + offset);
+        offset += sizeof(u16);
+
+        // Read the column offsets
+        u16 n_column_offsets = *(u16*)(data + offset);
+        offset += sizeof(u16);
+        patches->at(i).column_offsets.reserve(n_column_offsets);
+        while (n_column_offsets > 0) {
+            n_column_offsets -= 1;
+            patches->at(i).column_offsets.push_back(*(u32*)(data + offset));
+            offset += sizeof(u32);
+        }
+
+        // Read the post data
+        u32 n_bytes_post_data = *(u32*)(data + offset);
+        offset += sizeof(u32);
+        patches->at(i).post_data.resize(n_bytes_post_data);
+        memcpy(patches->at(i).post_data.data(), data + offset, n_bytes_post_data);
+        offset += n_bytes_post_data;
+    }
+
+    return true;
 }
 
 }  // namespace doom

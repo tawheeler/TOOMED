@@ -70,5 +70,6 @@ std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& i
 // The name of the exported asset entry.
 const std::string kAssetEntryPatches = "patches";
 core::AssetsExporterEntry ExportPatches(const std::vector<Patch>& patches);
+bool ImportPatches(std::vector<doom::Patch>* patches, const core::AssetsExporter& exporter);
 
 }  // namespace doom

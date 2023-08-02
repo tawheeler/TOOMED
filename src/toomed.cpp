@@ -19,6 +19,7 @@
 #include "input.hpp"
 #include "math_utils.hpp"
 #include "palette.hpp"
+#include "render_assets.hpp"
 #include "texture.hpp"
 #include "typedefs.hpp"
 #include "wad_importer.hpp"
@@ -628,9 +629,13 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
 
 // ------------------------------------------------------------------------------------------------
 void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
-                 const CameraState& camera, const std::vector<doom::Patch>& patches,
-                 const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
+                 const CameraState& camera, const core::RenderAssets& render_assets,
                  const RenderData& render_data) {
+    // Unpack
+    const std::vector<doom::Patch>& patches = render_assets.patches;
+    const core::Palette& palette = render_assets.palettes[0];
+    const std::vector<core::Colormap>& colormaps = render_assets.colormaps;
+
     // Zero out the way raycast radius
     memset(wall_raycast_radius, 0, sizeof(f32) * render_data.screen_size_x);
 
@@ -665,7 +670,7 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
 }
 
 // ------------------------------------------------------------------------------------------------
-void ImportGameData(core::GameMap* map) {
+void ImportGameData(core::GameMap* map, core::RenderAssets* render_assets) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Importing game data" << std::endl;
 
@@ -673,9 +678,24 @@ void ImportGameData(core::GameMap* map) {
     exporter.LoadAssetsFile("../toom/assets/toomed.bin");
     std::cout << "Num entries:" << exporter.NumEntries() << std::endl;
 
-    bool succeeded = map->Import(exporter);
+    bool succeeded = core::ImportPalettes(&(render_assets->palettes), exporter);
     if (!succeeded) {
-        std::cout << "Failed to load game map! Clearing possibly corrupted map." << std::endl;
+        std::cout << "Failed to load palettes!" << std::endl;
+    }
+
+    succeeded = core::ImportColormaps(&(render_assets->colormaps), exporter);
+    if (!succeeded) {
+        std::cout << "Failed to load colormaps!" << std::endl;
+    }
+
+    succeeded = doom::ImportPatches(&(render_assets->patches), exporter);
+    if (!succeeded) {
+        std::cout << "Failed to load patches!" << std::endl;
+    }
+
+    succeeded = map->Import(exporter);
+    if (!succeeded) {
+        std::cout << "Failed to load game map! Clearing possibly-corrupted map." << std::endl;
         map->Clear();
     }
 
@@ -684,17 +704,15 @@ void ImportGameData(core::GameMap* map) {
 }
 
 // ------------------------------------------------------------------------------------------------
-void ExportGameData(const core::GameMap& map, const std::vector<core::Palette> palettes,
-                    const std::vector<core::Colormap> colormaps,
-                    const std::vector<doom::Patch> patches) {
+void ExportGameData(const core::GameMap& map, const core::RenderAssets& render_assets) {
     std::cout << "--------------------------------------" << std::endl;
     std::cout << "Exporting game data" << std::endl;
 
     core::AssetsExporter exporter;
     std::cout << "Exporting core data" << std::endl;
-    exporter.AddEntry(core::ExportPalettes(palettes));
-    exporter.AddEntry(core::ExportColormaps(colormaps));
-    exporter.AddEntry(doom::ExportPatches(patches));
+    exporter.AddEntry(core::ExportPalettes(render_assets.palettes));
+    exporter.AddEntry(core::ExportColormaps(render_assets.colormaps));
+    exporter.AddEntry(doom::ExportPatches(render_assets.patches));
 
     std::cout << "Exporting map data" << std::endl;
     bool succeeded = map.Export(&exporter);
@@ -788,12 +806,15 @@ int main() {
         core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
     ASSERT(doom_assets, "Failed to load DOOM Assets");
 
-    std::vector<core::Palette> palettes = doom::ParseDoomPalettes(doom_assets);
-    ASSERT(palettes.size() == doom::kNumDoomPalettes, "Failed to load DOOM palettes");
-    std::vector<core::Colormap> colormaps = doom::ParseDoomColormaps(doom_assets);
-    ASSERT(colormaps.size() == doom::kNumDoomColormaps, "Failed to load DOOM colormaps");
-    std::vector<doom::Patch> patches = doom::ParseDoomTextures(doom_assets);
-    ASSERT(patches.size() > 0, "Failed to load DOOM patches");
+    // Create our render assets
+    core::RenderAssets render_assets;
+    render_assets.palettes = doom::ParseDoomPalettes(doom_assets);
+    ASSERT(render_assets.palettes.size() == doom::kNumDoomPalettes, "Failed to load DOOM palettes");
+    render_assets.colormaps = doom::ParseDoomColormaps(doom_assets);
+    ASSERT(render_assets.colormaps.size() == doom::kNumDoomColormaps,
+           "Failed to load DOOM colormaps");
+    render_assets.patches = doom::ParseDoomTextures(doom_assets);
+    ASSERT(render_assets.patches.size() > 0, "Failed to load DOOM patches");
 
     // Create our map
     core::GameMap map;
@@ -945,9 +966,9 @@ int main() {
 
             } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
                 if (event.key.keysym.sym == SDLK_o) {
-                    ExportGameData(map, palettes, colormaps, patches);
+                    ExportGameData(map, render_assets);
                 } else if (event.key.keysym.sym == SDLK_i) {
-                    ImportGameData(&map);
+                    ImportGameData(&map, &render_assets);
                     player_cam.qe = map.GetMesh().GetEnclosingTriangle(
                         player_cam.pos);  // TODO: Move somewhere better
                 } else if (event.key.keysym.sym == SDLK_w) {
@@ -1315,8 +1336,9 @@ int main() {
                                        (void*)(&side_info->texture_info_upper.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_info_upper.texture_id >= patches.size()) {
-                        side_info->texture_info_upper.texture_id = patches.size() - 1;
+                    usize n_patches = render_assets.patches.size();
+                    if (side_info->texture_info_upper.texture_id >= n_patches) {
+                        side_info->texture_info_upper.texture_id = n_patches - 1;
                     }
                 }
 
@@ -1332,8 +1354,9 @@ int main() {
                                        (void*)(&side_info->texture_info_middle.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_info_middle.texture_id >= patches.size()) {
-                        side_info->texture_info_middle.texture_id = patches.size() - 1;
+                    usize n_patches = render_assets.patches.size();
+                    if (side_info->texture_info_middle.texture_id >= n_patches) {
+                        side_info->texture_info_middle.texture_id = n_patches - 1;
                     }
                 }
                 ImGui::InputScalar("middle x_offset", ImGuiDataType_S16,
@@ -1348,8 +1371,9 @@ int main() {
                                        (void*)(&side_info->texture_info_lower.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
                     // Ensure it is in bounds. TODO: Clamp by number of textures we have.
-                    if (side_info->texture_info_lower.texture_id >= patches.size()) {
-                        side_info->texture_info_lower.texture_id = patches.size() - 1;
+                    usize n_patches = render_assets.patches.size();
+                    if (side_info->texture_info_lower.texture_id >= n_patches) {
+                        side_info->texture_info_lower.texture_id = n_patches - 1;
                     }
                 }
                 ImGui::InputScalar("lower x_offset", ImGuiDataType_S16,
@@ -1476,8 +1500,8 @@ int main() {
             MoveCamera(&player_cam, keyboard_state, map, dt);
 
             // Render the player view.
-            RenderWalls(player_view_pixels, wall_raycast_radius, map, player_cam, patches,
-                        palettes[0], colormaps, render_data);
+            RenderWalls(player_view_pixels, wall_raycast_radius, map, player_cam, render_assets,
+                        render_data);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);

@@ -26,6 +26,31 @@ AssetsExporterEntry ExportPalettes(const std::vector<Palette>& palettes) {
 }
 
 // ------------------------------------------------------------------------------------------------
+bool ImportPalettes(std::vector<Palette>* palettes, const AssetsExporter& exporter) {
+    const AssetsExporterEntry* entry = exporter.FindEntry(kAssetEntryPalettes);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << kAssetEntryPalettes << std::endl;
+        return false;
+    }
+
+    u32 offset = 0;
+    const u8* data = entry->data.data();
+
+    palettes->clear();
+
+    u32 n_palettes = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    palettes->resize(n_palettes);
+    for (u32 i = 0; i < n_palettes; i++) {
+        memcpy(palettes->at(i).rgbs, data + offset, 256 * 3);
+        offset += 256 * 3;
+    }
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 AssetsExporterEntry ExportColormaps(const std::vector<Colormap>& colormaps) {
     AssetsExporterEntry entry;
     entry.SetName(kAssetEntryColormaps);
@@ -42,6 +67,31 @@ AssetsExporterEntry ExportColormaps(const std::vector<Colormap>& colormaps) {
     entry.SetData(buffer.str());
 
     return entry;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool ImportColormaps(std::vector<Colormap>* colormaps, const AssetsExporter& exporter) {
+    const AssetsExporterEntry* entry = exporter.FindEntry(kAssetEntryColormaps);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << kAssetEntryColormaps << std::endl;
+        return false;
+    }
+
+    u32 offset = 0;
+    const u8* data = entry->data.data();
+
+    colormaps->clear();
+
+    u32 n_colormaps = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    colormaps->resize(n_colormaps);
+    for (u32 i = 0; i < n_colormaps; i++) {
+        memcpy(colormaps->at(i).map, data + offset, sizeof(colormaps->at(i).map));
+        offset += sizeof(colormaps->at(i).map);
+    }
+
+    return true;
 }
 
 }  // namespace core
