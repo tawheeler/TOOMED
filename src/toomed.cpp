@@ -1339,6 +1339,9 @@ int main() {
                 f32 step_f32 = 0.1f;
 
                 ImGui::Separator();
+                ImGui::Text(
+                    "upper texture name: %s",
+                    render_assets.patches[side_info->texture_info_upper.texture_id].name.c_str());
                 if (ImGui::InputScalar("upper texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_upper.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
@@ -1377,6 +1380,9 @@ int main() {
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
 
                 ImGui::Separator();
+                ImGui::Text(
+                    "lower texture name: %s",
+                    render_assets.patches[side_info->texture_info_lower.texture_id].name.c_str());
                 if (ImGui::InputScalar("lower texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_lower.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
