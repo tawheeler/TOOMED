@@ -333,14 +333,17 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
     // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
     // texture_z_height = real-world height of the painting surface
 
+    // How many patch pixels high the column is.
+    f32 y_patch_height_pix = render_data.n_pixels_per_world_unit * texture_z_height;
+
     // y_patch = m * y_screen + b for converting screen to patch coordinate
     //                         0 = m * y_upper + b   -> b = -m * y_upper
-    // y_patch_max * patch_z - 1 = m * y_lower + b
+    //    y_patch_height_pix - 1 = m * y_lower + b
     //                           = m * y_lower - m * y_upper
     //                           = m * (y_lower - y_upper)
-    // m = (y_patch_max * patch_z - 1) / (y_lower - y_upper)
+    // m = (y_patch_height_pix - 1) / (y_lower - y_upper)
 
-    f32 m = (f32)(patch.size_y * texture_z_height - 1.0f) / (y_lower - y_upper);
+    f32 m = (f32)(y_patch_height_pix - 1.0f) / (y_lower - y_upper);
 
     // the number of (continuous) patch pixels y changes per screen pixel
     f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes up by 1, y_patch goes up this much
@@ -351,49 +354,50 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
 
     f32 y_patch = 0.0f;
     f32 y_screen = y_upper;
+    while (y_screen > y_lo) {
+        u32 column_offset = patch.column_offsets[x_patch];
+        while (patch.post_data[column_offset] != 0xFF) {
+            u8 y_patch_delta = patch.post_data[column_offset];
+            column_offset++;
+            int post_length = patch.post_data[column_offset];
+            column_offset++;
 
-    u32 column_offset = patch.column_offsets[x_patch];
-    while (patch.post_data[column_offset] != 0xFF) {
-        u8 y_patch_delta = patch.post_data[column_offset];
-        column_offset++;
-        int post_length = patch.post_data[column_offset];
-        column_offset++;
+            // skip transparent pixels
+            y_patch += y_patch_delta;
+            y_screen += y_patch_delta * y_screen_step_per_patch_pixel;
 
-        // skip transparent pixels
-        y_patch += y_patch_delta;
-        y_screen += y_patch_delta * y_screen_step_per_patch_pixel;
+            // process the post. We have `post_length` pixels to draw
+            while (post_length > 0 && y_screen > y_lo) {
+                // Keep decreasing y_screen (and increasing y_patch) as long as we are within the
+                // post data.
 
-        // process the post. We have `post_length` pixels to draw
-        while (post_length > 0 && y_screen > y_lo) {
-            // Keep decreasing y_screen (and increasing y_patch) as long as we are within the post
-            // data.
+                // Render pixels
+                // TODO: @efficiency Extract color more efficiently.
+                u8 palette_index = patch.post_data[column_offset];
+                palette_index = colormap.map[palette_index];
+                u8 r = palette.rgbs[3 * palette_index];
+                u8 g = palette.rgbs[3 * palette_index + 1];
+                u8 b = palette.rgbs[3 * palette_index + 2];
+                u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
 
-            // Render pixels
-            // TODO: @efficiency Extract color more efficiently.
-            u8 palette_index = patch.post_data[column_offset];
-            palette_index = colormap.map[palette_index];
-            u8 r = palette.rgbs[3 * palette_index];
-            u8 g = palette.rgbs[3 * palette_index + 1];
-            u8 b = palette.rgbs[3 * palette_index + 2];
-            u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
-
-            // Render this color for all screen pixels that map to y_patch
-            u16 y_patch_discrete = (u16)y_patch;
-            int y_screen_discrete = (int)y_screen;
-            while ((u16)y_patch == y_patch_discrete) {
-                if (y_screen_discrete < y_hi && y_screen_discrete > y_lo) {
-                    pixels[(y_screen_discrete * render_data.screen_size_x) + x_screen] = abgr;
+                // Render this color for all screen pixels that map to y_patch
+                u16 y_patch_discrete = (u16)y_patch;
+                int y_screen_discrete = (int)y_screen;
+                while ((u16)y_patch == y_patch_discrete) {
+                    if (y_screen_discrete < y_hi && y_screen_discrete > y_lo) {
+                        pixels[(y_screen_discrete * render_data.screen_size_x) + x_screen] = abgr;
+                    }
+                    y_screen_discrete -= 1;
+                    y_screen -= 1.0f;
+                    y_patch -= y_patch_step_per_screen_pixel;
                 }
-                y_screen_discrete -= 1;
-                y_screen -= 1.0f;
-                y_patch -= y_patch_step_per_screen_pixel;
-            }
 
-            u16 patch_delta = (u16)y_patch - y_patch_discrete;
-            while (patch_delta > 0) {
-                column_offset += 1;
-                post_length -= 1;
-                patch_delta -= 1;
+                u16 patch_delta = (u16)y_patch - y_patch_discrete;
+                while (patch_delta > 0) {
+                    column_offset += 1;
+                    post_length -= 1;
+                    patch_delta -= 1;
+                }
             }
         }
     }
@@ -1360,9 +1364,11 @@ int main() {
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
 
                 ImGui::Separator();
-                ImGui::Text(
-                    "middle texture name: %s",
-                    render_assets.patches[side_info->texture_info_middle.texture_id].name.c_str());
+                const doom::Patch& middle_patch =
+                    render_assets.patches[side_info->texture_info_middle.texture_id];
+                ImGui::Text("middle patch name: %s", middle_patch.name.c_str());
+                ImGui::Text("middle patch size x: %d", middle_patch.size_x);
+                ImGui::Text("middle patch size y: %d", middle_patch.size_y);
                 if (ImGui::InputScalar("middle texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_middle.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
