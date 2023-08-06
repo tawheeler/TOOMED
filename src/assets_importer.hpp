@@ -3,7 +3,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "palette.hpp"
+#include "texture.hpp"
 #include "typedefs.hpp"
 
 #ifndef ASSET_NAME_BYTE_COUNT
@@ -12,9 +15,11 @@
 
 namespace core {
 
-// TODO: Eventually move this elsewhere.
-//       We want to move to a system where we index into the palette rather than store full ABGR
-//       values.
+// The Julia assets store wall textures as 64x64 tiles in a larger nx128 image.
+// A lighter version of each texture is in the first column, and a darker version is in the
+// second column.
+// We want to move to a system where we index into the palette rather than store full ABGR
+// values.
 struct OldStyleBitmap {
     u32 n_pixels;
     u32 n_pixels_per_column;
@@ -29,6 +34,11 @@ struct OldStyleBitmap {
 };
 
 OldStyleBitmap LoadBitmap(u8* data);
+
+// Extract the light wall textures as patches.
+// All patches will be given names prefixed by prefix: 'prefix'%02d.
+std::vector<doom::Patch> ExtractPatches(const OldStyleBitmap& bitmap, const std::string& prefix,
+                                        const Palette& palette);
 
 struct AssetsImporterEntry {
     u32 byte_offset;

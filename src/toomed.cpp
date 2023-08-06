@@ -791,22 +791,26 @@ int main() {
     ImGui_ImplSDL2_InitForSDLRenderer(editor_window_data.window, editor_window_data.renderer);
     ImGui_ImplSDLRenderer2_Init(editor_window_data.renderer);
 
-    // Import our julia assets
-    std::unique_ptr<core::AssetsImporter> julia_assets =
-        core::AssetsImporter::LoadFromFile("../toom/assets/assets.bin");
-    ASSERT(julia_assets, "Failed to load Julia Assets");
-
-    // Extract our wall textures
-    auto bitmap_data_opt = julia_assets->FindEntryData("textures");
-    ASSERT(bitmap_data_opt, "Failed to find texture data");
-    // core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
-
     // // Load our DOOM assets
     // std::unique_ptr<core::WadImporter> doom_assets =
     //     core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
     // ASSERT(doom_assets, "Failed to load DOOM Assets");
 
-    // // Create our render assets
+    // Import our julia assets
+    // std::unique_ptr<core::AssetsImporter> julia_assets =
+    //     core::AssetsImporter::LoadFromFile("../toom/assets/assets.bin");
+    // ASSERT(julia_assets, "Failed to load Julia Assets");
+
+    // Extract our wall textures
+    // auto bitmap_data_opt = julia_assets->FindEntryData("textures");
+    // ASSERT(bitmap_data_opt, "Failed to find texture data");
+    // core::OldStyleBitmap bitmap = core::LoadBitmap(*bitmap_data_opt);
+    // for (const doom::Patch& patch :
+    //      core::ExtractPatches(bitmap, "julia", render_assets.palettes[0])) {
+    //     render_assets.patches.push_back(patch);
+    // }
+
+    // Create our render assets
     core::RenderAssets render_assets;
     // render_assets.palettes = doom::ParseDoomPalettes(doom_assets);
     // ASSERT(render_assets.palettes.size() == doom::kNumDoomPalettes, "Failed to load DOOM
@@ -818,6 +822,9 @@ int main() {
 
     // Create our map
     core::GameMap map;
+
+    // Import our game data
+    ImportGameData(&map, &render_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
@@ -1350,6 +1357,9 @@ int main() {
                                    (void*)(&step_i16), (void*)(NULL), "%d", flags);
 
                 ImGui::Separator();
+                ImGui::Text(
+                    "middle texture name: %s",
+                    render_assets.patches[side_info->texture_info_middle.texture_id].name.c_str());
                 if (ImGui::InputScalar("middle texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_middle.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {

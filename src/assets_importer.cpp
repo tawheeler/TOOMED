@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <sstream>
 
 namespace core {
 
@@ -37,6 +38,87 @@ OldStyleBitmap LoadBitmap(u8* data) {
     bitmap.n_pixels_per_row = bitmap.n_pixels / bitmap.n_pixels_per_column;
 
     return bitmap;
+}
+
+// ------------------------------------------------------------------------------------------------
+std::vector<doom::Patch> ExtractPatches(const OldStyleBitmap& bitmap, const std::string& prefix,
+                                        const Palette& palette) {
+    std::vector<doom::Patch> patches;
+
+    std::vector<LAB> lab_palette = GetLabPalette(palette);
+
+    constexpr u32 kTextureSize = 64;
+
+    u32 n_patches = bitmap.n_pixels_per_column / kTextureSize;
+    patches.reserve(n_patches);
+    for (u32 i_patch; i_patch < n_patches; i_patch++) {
+        doom::Patch patch;
+
+        std::stringstream ss;
+        ss << prefix;
+        if (i_patch < 10) {
+            ss << "0";
+        }
+        ss << i_patch;
+
+        patch.name = ss.str();
+        patch.size_x = kTextureSize;
+        patch.size_y = kTextureSize;
+
+        // Just default the origin to the bottom center
+        patch.origin_x = patch.size_x / 2;
+        patch.origin_y = patch.size_y;
+
+        patch.column_offsets.resize(patch.size_x, 0);
+
+        u32 idx = 0;
+        for (u16 x = 0; x < patch.size_x; x++) {
+            // Create the posts for column x.
+
+            // Just add fresh columns.
+            // TODO: @efficiency: reuse repeated columns.
+            patch.column_offsets[x] = (u32)(patch.post_data.size());
+
+            bool has_active_post = false;
+            u32 byte_offset_for_active_post = 0;
+            u16 y_delta = 0;
+            u16 length = 0;
+
+            for (u16 y = 0; y < patch.size_y; y++) {
+                idx++;
+                if (!has_active_post) {
+                    // We started an active post.
+                    has_active_post = true;
+                    length = 1;
+
+                    // start a new active post.
+                    byte_offset_for_active_post = (u32)(patch.post_data.size());
+                    patch.post_data.push_back(y_delta);
+                    patch.post_data.push_back(length);  // will need to overwrite later
+
+                    u32 abgr = bitmap.GetColumnMajorPixelAt(x, y + i_patch * kTextureSize);
+                    patch.post_data.push_back(GetClosestColorInPalette(abgr, lab_palette));
+                    y_delta = 0;
+                } else {
+                    length++;
+                    u32 abgr = bitmap.GetColumnMajorPixelAt(x, y + i_patch * kTextureSize);
+                    patch.post_data.push_back(GetClosestColorInPalette(abgr, lab_palette));
+                }
+            }
+
+            // Write out the length if we need to terminate the final post
+            if (has_active_post) {
+                patch.post_data[byte_offset_for_active_post + 1] = length;
+            }
+
+            // Terminate each column
+            patch.post_data.push_back(0xFF);
+        }
+
+        patches.push_back(patch);
+    }
+
+    return patches;
 }
 
 // ------------------------------------------------------------------------------------------------

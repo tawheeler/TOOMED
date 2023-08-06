@@ -1,5 +1,6 @@
 #include "palette.hpp"
 
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -92,6 +93,104 @@ bool ImportColormaps(std::vector<Colormap>* colormaps, const AssetsExporter& exp
     }
 
     return true;
+}
+
+f32 PivotRGB(f32 c) {
+    if (c > 0.04045) {
+        return std::pow((c + 0.055) / 1.055, 2.4) * 100;
+    } else {
+        return c / 12.92 * 100;
+    }
+}
+
+f32 PivotXYZ(f32 c) {
+    f32 i = std::cbrt(c);
+    if (c > 0.008856) {
+        return i;
+    } else {
+        return 7.787 * c + 16.0 / 116.0;
+    }
+}
+
+LAB RGB2LAB(u8 r, u8 g, u8 b) {
+    f32 rp = PivotRGB(r / 255.0);
+    f32 gp = PivotRGB(b / 255.0);
+    f32 bp = PivotRGB(g / 255.0);
+
+    f32 x = 0.4124 * rp + 0.3576 * gp + 0.1805 * bp;
+    f32 y = 0.2126 * rp + 0.7152 * gp + 0.0722 * bp;
+    f32 z = 0.0193 * rp + 0.1192 * gp + 0.9505 * bp;
+
+    // Observer = deg, Illuminant = D65
+    f32 xp = PivotXYZ(x / 95.047);
+    f32 yp = PivotXYZ(y / 100.00);
+    f32 zp = PivotXYZ(z / 108.883);
+
+    LAB retval;
+    retval.l = 116.0 * yp - 16.0;
+    retval.a = 500.0 * (xp - yp);
+    retval.b = 200.0 * (yp - zp);
+    return retval;
+}
+
+// https://en.wikipedia.org/wiki/Color_difference#CIE94
+f32 CalcColorDistanceCie94(LAB A, LAB B) {
+    constexpr f32 kl = 1.0;
+    constexpr f32 kc = 1.0;
+    constexpr f32 kH = 1.0;
+    constexpr f32 K1 = 0.045;
+    constexpr f32 K2 = 0.015;
+
+    f32 C1 = std::hypot(A.a, A.b);
+    f32 C2 = std::hypot(B.a, B.b);
+    f32 dC = C1 - C2;
+    f32 dL = A.l - B.l;
+    f32 da = A.a - B.a;
+    f32 db = A.b - B.b;
+    f32 dH = std::sqrt(std::max(da * da + db * db - dC * dC, 0.0f));  // TODO
+    f32 SL = 1.0;
+    f32 SC = 1.0 + K1 * C1;
+    f32 SH = 1.0 + K2 * C1;
+    return sqrt(std::pow(dL / (kl * SL), 2) + std::pow(dC / (kc * SC), 2) +
+                std::pow(dH / (kH * SH), 2));
+}
+
+u8 GetClosestColorInPalette(u32 abgr, std::vector<LAB> palette) {
+    u8 r = abgr & 0xFF;
+    u8 g = (abgr >> 8) & 0xFF;
+    u8 b = (abgr >> 16) & 0xFF;
+    LAB lab = RGB2LAB(r, g, b);
+
+    f32 min_dist = INFINITY;
+    u8 best_index = 0;
+    for (usize i = 0; i < palette.size(); i++) {
+        f32 dist = CalcColorDistanceCie94(lab, palette[i]);
+        if (dist < min_dist) {
+            min_dist = dist;
+            best_index = (u8)i;
+        }
+    }
+
+    return best_index;
+}
+
+std::vector<LAB> GetLabPalette(const Palette& palette) {
+    std::vector<LAB> retval;
+    retval.reserve(256);
+
+    u32 offset = 0;
+    for (u32 i = 0; i < 256; i++) {
+        u8 r = *(palette.rgbs + offset);
+        offset++;
+        u8 g = *(palette.rgbs + offset);
+        offset++;
+        u8 b = *(palette.rgbs + offset);
+        offset++;
+
+        retval.push_back(RGB2LAB(r, g, b));
+    }
+
+    return retval;
 }
 
 }  // namespace core

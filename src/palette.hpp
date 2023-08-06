@@ -23,6 +23,22 @@ AssetsExporterEntry ExportPalettes(const std::vector<Palette>& palettes);
 // Import the palettes
 bool ImportPalettes(std::vector<Palette>* palettes, const AssetsExporter& exporter);
 
+// A color in the LAB colorspace.
+struct LAB {
+    f32 l;
+    f32 a;
+    f32 b;
+};
+
+// Convert the given RGB color to LAB;
+LAB RGB2LAB(u8 r, u8 g, u8 b);
+
+// Convert the given ABGR color to LAB (opacity is ignored).
+u8 GetClosestColorInPalette(u32 abgr, std::vector<LAB> palette);
+
+// Convert the given RGB palette to LAB;
+std::vector<LAB> GetLabPalette(const Palette& palette);
+
 // The DOOM colormaps.
 // Each colormap maps palette indices (u8's) to new palette indices.
 // DOOM contains 34 colormaps, the first 32 of which have decreasing brightness,
