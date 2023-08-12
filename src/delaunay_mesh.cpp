@@ -118,6 +118,150 @@ bool DelaunayMesh::LoadFromData(const u8* data) {
 }
 
 // ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size,
+                                    const u8* segs_data, u32 segs_data_size,
+                                    const u8* subsectors_data, u32 subsectors_data_size,
+                                    const u8* linedefs_data, u32 linedefs_data_size) {
+    // Reset the mesh.
+
+    vertices_.clear();
+    i_vertex_alive_first_ = {kInvalidIndex};
+    i_vertex_alive_last_ = {kInvalidIndex};
+    i_vertex_free_first_ = {kInvalidIndex};
+    i_vertex_free_last_ = {kInvalidIndex};
+    n_vertices_ = 0;
+
+    quarter_edges_.clear();
+    i_qe_alive_first_ = {kInvalidIndex};
+    i_qe_alive_last_ = {kInvalidIndex};
+    i_qe_free_first_ = {kInvalidIndex};
+    i_qe_free_last_ = {kInvalidIndex};
+    n_quarter_edges_ = 0;
+
+    // Add the bounding vertices
+    constexpr f32 kDoomUnitsPerWorldUnit = 64.0f;  // DOOM units are per-pixel.
+    {
+        constexpr f32 kMaxDoomX = std::numeric_limits<i16>::max() / kDoomUnitsPerWorldUnit;
+        bounding_radius_ = kMaxDoomX * 1.41;
+
+        // The triangle radius is 2r + eps(), which guarantees that it is large enough.
+        float r = 2 * bounding_radius_ + min_dist_to_edge_ + min_dist_to_vertex_;
+
+        VertexIndex a = AddVertex(r * std::cos(90 * M_PI / 180.0), r * std::sin(90 * M_PI / 180.0));
+        VertexIndex b =
+            AddVertex(r * std::cos(210 * M_PI / 180.0), r * std::sin(210 * M_PI / 180.0));
+        VertexIndex c =
+            AddVertex(r * std::cos(-30 * M_PI / 180.0), r * std::sin(-30 * M_PI / 180.0));
+
+        QuarterEdgeIndex ab = AddEdge(a, b);
+        QuarterEdgeIndex bc = AddEdge(b, c);
+        QuarterEdgeIndex ca = AddEdge(c, a);
+
+        Splice(Sym(ab), bc);
+        Splice(Sym(bc), ca);
+        Splice(Sym(ca), ab);
+    }
+
+    // Load the vertices
+    u32 sizeof_vertex = 4;
+    u32 n_vertices = vertex_data_size / sizeof_vertex;
+    std::vector<common::Vec2f> doom_vertices;
+    doom_vertices.reserve(n_vertices);
+
+    u32 vertices_offset = 0;
+    for (u32 i = 0; i < n_vertices; i++) {
+        i16 x = *(i16*)(vertex_data + vertices_offset);
+        vertices_offset += sizeof(i16);
+        i16 y = *(i16*)(vertex_data + vertices_offset);
+        vertices_offset += sizeof(i16);
+
+        doom_vertices.emplace_back(x / kDoomUnitsPerWorldUnit, y / kDoomUnitsPerWorldUnit);
+    }
+
+    // Add the linedefs one at a time.
+    // Introduce the vertices. If there already is a vertex, that is okay.
+    // Ensure that we flip edges such that the new linedefs have corresponding edges.
+    // Constrain those edges.
+
+    // Linedefs
+    struct Linedef {
+        i16 i_vertex_start;
+        i16 i_vertex_end;
+        i16 flags;
+        i16 special_type;
+        i16 sector_tag;
+        i16 i_sidedef_front;
+        i16 i_sidedef_back;
+    };
+    u32 n_linedefs = linedefs_data_size / sizeof(Linedef);
+
+    u32 linedefs_offset = 0;
+    for (u32 i_linedef = 0; i_linedef < n_linedefs; i_linedef++) {
+        Linedef linedef = *(Linedef*)(linedefs_data + linedefs_offset);
+        linedefs_offset += sizeof(Linedef);
+
+        const common::Vec2f& a = doom_vertices[linedef.i_vertex_start];
+        const common::Vec2f& b = doom_vertices[linedef.i_vertex_end];
+
+        // Insert vertex a.
+        // The vertex should either be in a face or coincident with an existing point.
+        // TODO: It may be possible to be on an edge, but the edge should not be constrained.
+        InsertVertexResult res_a = InsertVertex(a);
+        if (res_a.category != InsertVertexResultCategory::IN_FACE &&
+            res_a.category != InsertVertexResultCategory::COINCIDENT) {
+            return false;
+        } else if (res_a.category == InsertVertexResultCategory::IN_FACE) {
+            EnforceLocallyDelaunay(res_a.i_qe);
+        }
+
+        // Insert vertex b.
+        InsertVertexResult res_b = InsertVertex(b);
+        if (res_b.category != InsertVertexResultCategory::IN_FACE &&
+            res_b.category != InsertVertexResultCategory::COINCIDENT) {
+            return false;
+        } else if (res_a.category == InsertVertexResultCategory::IN_FACE) {
+            EnforceLocallyDelaunay(res_b.i_qe);
+        }
+
+        // Now ensure that there is a line between A and B.
+        // If there is not, flip edges until there is.
+        // TODO
+    }
+
+    // Segs and Subsectors
+    // struct Seg {
+    //     i16 i_vertex_start;
+    //     i16 i_vertex_end;
+    //     i16 discrete_angle;
+    //     i16 i_linedef;
+    //     i16 is_along_linedef;
+    //     i16 offset;  // distance along linedef to start of seg
+    // };
+    // u32 n_segs = segs_data_size / sizeof(Seg);
+
+    // struct SubsectorEntry {
+    //     i16 n_segs;
+    //     i16 i_seg_start;
+    // };
+    // u32 n_subsectors = subsectors_data_size / sizeof(SubsectorEntry);
+
+    // std::vector<common::Vec2f> sector_vs;
+    // SubsectorEntry subsector = *(SubsectorEntry*)(subsectors_data + 0);
+    // for (i16 i_seg = subsector.i_seg_start; i_seg < subsector.i_seg_start + subsector.n_segs;
+    //      i_seg++) {
+    //     Seg seg = *(Seg*)(segs_data + sizeof(Seg) * i_seg);
+    //     common::Vec2f v_start = vertices_[seg.i_vertex_start].v;
+    //     common::Vec2f b = vertices_[seg.i_vertex_end].v;
+    //     common::Vec2f dir = common::Normalize(b - v_start);
+    //     common::Vec2f a = v_start + dir * seg.offset;
+    //     sector_vs.push_back(a);
+    //     sector_vs.push_back(b);
+    // }
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::Next(QuarterEdgeIndex qe) const { return Get(qe).i_nxt; }
 
 // ------------------------------------------------------------------------------------------------
@@ -139,6 +283,24 @@ QuarterEdgeIndex DelaunayMesh::Prev(QuarterEdgeIndex qe) const {
 // ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::Lnext(QuarterEdgeIndex qe) const {
     return Get(Get(Tor(qe)).i_nxt).i_rot;
+}
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdgeIndex DelaunayMesh::GetQuarterEdgeRightHandClosestTo(QuarterEdgeIndex qe_src,
+                                                                const common::Vec2f& dst) const {
+    const common::Vec2f& a = GetVertex(qe_src);
+
+    QuarterEdgeIndex qe_next = Next(qe_src);
+
+    f32 rh = common::GetRightHandedness(a, GetVertex(Sym(qe_src)), dst);
+    f32 rh_next = common::GetRightHandedness(a, GetVertex(Sym(qe_next)), dst);
+    while (rh < 0.0 || rh_next >= 0.0) {
+        rh = rh_next;
+        qe_src = qe_next;
+        qe_next = Next(qe_src);
+        rh_next = common::GetRightHandedness(a, GetVertex(Sym(qe_next)), dst);
+    }
+    return qe_src;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -847,92 +1009,47 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
     return result;
 }
 
-// //
 // ------------------------------------------------------------------------------------------------
-// bool DelaunayMesh::ConstrainEdge(int i, int j) {
-//     // TODO: If we have vertices intersecting the edge, we should split our constrained edge
-//     //       by those vertices and call this for each sub-edge.
+bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b) {
+    // TODO: If we have vertices intersecting the edge, we should split our constrained edge
+    //       by those vertices and call this for each sub-edge.
 
-//     // TODO: If we try to constrain an edge that overlaps with an already-constrained edge,
-//     //       then we need to produce an intersection and fix it that way.
+    // TODO: If we try to constrain an edge that overlaps with an already-constrained edge,
+    //       then we need to produce an intersection and fix it that way.
 
-//     if (i == j) {
-//         return false;  // Cannot add self-edges
-//     }
+    if (!IsValid(qe_a)) {
+        return false;
+    }
 
-//     int n = NumVertices();
-//     if (i < 0 || i >= n || j < 0 || j >= n) {
-//         return false;  // Invalid index
-//     }
+    VertexIndex i_vertex_a = GetVertexIndex(qe_a);
+    if (i_vertex_a == i_vertex_b) {
+        return false;  // Cannot add self-edges
+    }
 
-//     // If we already have an edge between these two vertices, we are done.
-//     VertexData* a_data = vertices_.at(i);
-//     VertexData* b_data = vertices_.at(j);
-//     QuarterEdge* qe_a = nullptr;
-//     for (QuarterEdge* qe : quarter_edges_) {
-//         if (qe->vertex == a_data) {
-//             qe_a = qe;
-//             if (Sym(qe)->vertex == b_data) {
-//                 return true;  // already exists
-//             }
-//         }
-//     }
+    // Find either an existing quarter edge from A to B, or the quarter edge from A to C that is
+    // immediately counter-clockwise of A->B.
 
-//     const common::Vec2f& a = a_data->vertex;
-//     const common::Vec2f& b = b_data->vertex;
+    const common::Vec2f& b = GetVertex(i_vertex_b);
+    qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
 
-//     std::cout << "A: (" << a.x << ", " << a.y << ")" << std::endl;
-//     std::cout << "B: (" << b.x << ", " << b.y << ")" << std::endl;
+    while (Get(Sym(qe_a)).i_vertex != i_vertex_b) {
+        // The edge is not pointing to b. We are point to C instead, and are immediately CCW of B.
+        // We need to flip CD, where D is on the other side of AB from C.
+        QuarterEdgeIndex qe_cd = Prev(Sym(qe_a));
 
-//     // --------------------------------------------------------------------------
-//     // The edge does not yet exist.
-//     // Walk around, from A, toward B and flip any offending edges.
-//     // Repeat until we have flipped our way to producing AB.
+        bool flipped = MaybeFlipEdge(qe_cd);
+        if (!flipped) {
+            return false;  // FAILED!
+        }
 
-//     for (int iter = 0; iter < 100; iter++) {
-//         // Rotate qe_a to the last coincident quarter edge that is CCW of the new segment.
-//         while (GetRightHandedness(a, Sym(qe_a)->vertex->vertex, b) <= 0.0) {
-//             qe_a = qe_a->next;
-//         }
-//         while (GetRightHandedness(a, Sym(qe_a->next)->vertex->vertex, b) > 0.0) {
-//             qe_a = qe_a->next;
-//         }
+        // After flipping, we would have an edge pointing from A to E, where E completes the quad
+        // on the other side of CD from A. It is possible that E = B, or that E lies on either side
+        // of AB.
+        // Effectively start over.
+        qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
+    }
 
-//         // qe_a will then have a CCW triangle ACD.
-//         // If the far side of the triangle is B (ACD == ADB), then we are done.
-//         // Otherwise, D is on the other side of AB, so CD intersects AB, and we need to see
-//         if we
-//         // can flip CD.
-//         QuarterEdge* qe_dual =
-//             Tor(qe_a);  // The dual quarter edge that starts inside ACD and points across AC.
-//         VertexData* c_data = (qe_dual->next->rot)->vertex;
-//         VertexData* d_data = (qe_dual->next->next->rot)->vertex;
-//         const common::Vec2f& c = c_data->vertex;
-//         const common::Vec2f& d = d_data->vertex;
-
-//         if (d_data == b_data) {
-//             // We have B, so we have produced edge ab and are done.
-//             return true;
-//         } else {
-//             // See if we can flip CD. We have to ensure that it is a convex quadrilateral.
-//             // E is the vertex on the far side.
-//             VertexData* e_data = Tor(Sym(qe_dual->next)->next)->vertex;
-//             const common::Vec2f& e = e_data->vertex;
-//             if (GetRightHandedness(a, c, e) > 0 && GetRightHandedness(a, e, d) > 0) {
-//                 // Flip it
-//                 QuarterEdge* qe_cd = qe_dual->next->rot;
-//                 FlipEdge(qe_cd);
-//             } else {
-//                 // TODO: Handle this case. We need to progress past C and try the next
-//                 triangle that
-//                 //       could overlap.
-//                 return false;
-//             }
-//         }
-//     }
-
-//     // AAAAAAH this should never happen.
-//     return false;
-// }
+    return true;
+}
 
 }  // namespace core

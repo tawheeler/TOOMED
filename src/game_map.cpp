@@ -428,6 +428,16 @@ bool GameMap::Import(const AssetsExporter& exporter) {
 }
 
 // ------------------------------------------------------------------------------------------------
+bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* segs_data,
+                               u32 segs_data_size, const u8* subsectors_data,
+                               u32 subsectors_data_size, const u8* linedefs_data,
+                               u32 linedefs_data_size) {
+    mesh_.LoadFromDoomData(vertex_data, vertex_data_size, segs_data, segs_data_size,
+                           subsectors_data, subsectors_data_size, linedefs_data,
+                           linedefs_data_size);
+}
+
+// ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex GameMap::FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
                                                  f32 tolerance) const {
     const auto [qe_ab, qe_bc, qe_ca] = mesh_.GetTriangleQuarterEdges(qe_dual);

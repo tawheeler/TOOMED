@@ -96,6 +96,9 @@ class DelaunayMesh {
 
     void Clear();
     bool LoadFromData(const u8* data);
+    bool LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* segs_data,
+                          u32 segs_data_size, const u8* subsectors_data, u32 subsectors_data_size,
+                          const u8* linedefs_data, u32 linedefs_data_size);
 
     const common::Vec2f& GetVertex(VertexIndex i) const { return vertices_[i.i].v; }
     const common::Vec2f& GetVertex(QuarterEdgeIndex i) const {
@@ -142,6 +145,12 @@ class DelaunayMesh {
 
     // Get the next quarter edge that rotates around the same triangle (CCW), in the CCW direction.
     QuarterEdgeIndex Lnext(QuarterEdgeIndex qe) const;
+
+    // Get the quarter edge that shares the same origin as qe_src that has the smallest right-hand
+    // (counter clockwise) angle to pointing toward the given point.
+    // If there is a quarter edge from src to dst, then this will return that quarter edge.
+    QuarterEdgeIndex GetQuarterEdgeRightHandClosestTo(QuarterEdgeIndex qe_src,
+                                                      const common::Vec2f& dst) const;
 
     // A dual edge connects two faces.
     bool IsDual(QuarterEdgeIndex i) const;
@@ -195,6 +204,13 @@ class DelaunayMesh {
     // We pass in a primal quarter edge (originating at the vertex to walk around) at which to start
     // the enforcement.
     void EnforceLocallyDelaunay(QuarterEdgeIndex qe_start);
+
+    // Update the mesh such that there is an edge between A and B, where A is given by a primal
+    // quarter edge and B is given as a vertex index.
+    // The method returns true if the modification was successful.
+    // If unsuccessful, it will not have modified the mesh.
+    // This method will not succeed if there is a constrained edge that overlaps AB.
+    bool EnforceEdge(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b);
 
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.

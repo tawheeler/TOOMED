@@ -105,9 +105,14 @@ class GameMap {
     // Load the GameMap from the given file. This results the GameMap.
     bool Import(const core::AssetsExporter& exporter);
 
+    // Load a game map from DOOM data.
+    bool LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* segs_data,
+                          u32 segs_data_size, const u8* subsectors_data, u32 subsectors_data_size,
+                          const u8* linedefs_data, u32 linedefs_data_size);
+
     // Finds a vertex (as a primal quarter edge) near the given position, if there is one, using the
-    // provided dual quarter edge representing the face containing pos to more quickly locate the
-    // vertex.
+    // provided dual quarter edge representing the face containing pos to more quickly locate
+    // the vertex.
     QuarterEdgeIndex FindVertexNearPosition(const common::Vec2f& pos, QuarterEdgeIndex qe_dual,
                                             f32 tolerance = 0.3) const;
 

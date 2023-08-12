@@ -37,6 +37,52 @@
     }
 
 // ------------------------------------------------------------------------------------------------
+bool LoadDoomLevel(core::GameMap* map, const std::string& name,
+                   const std::unique_ptr<core::WadImporter>& importer) {
+    auto idx_opt = importer->FindEntryDataIndex(name);
+    if (!idx_opt) {
+        return false;
+    }
+
+    // The map data lumps are after the map name lump
+    int lump_index = idx_opt.value();
+
+    lump_index += 2;  // skip THINGS
+    auto linedefs_opt = importer->GetEntryData(lump_index);
+    lump_index += 1;
+    auto sidedefs_opt = importer->GetEntryData(lump_index);
+    lump_index += 1;
+    auto vertexes_opt = importer->GetEntryData(lump_index);
+    lump_index += 1;
+    auto segs_opt = importer->GetEntryData(lump_index);
+    lump_index += 1;
+    auto subsectors_opt = importer->GetEntryData(lump_index);
+    lump_index += 1;  // skip and NODES
+    auto sectors_opt = importer->GetEntryData(lump_index);
+
+    if (!linedefs_opt || !sidedefs_opt || !vertexes_opt || !subsectors_opt || !segs_opt ||
+        !sectors_opt) {
+        return false;
+    }
+
+    const auto& [vertexes_data, vertexes_data_size] = *vertexes_opt;
+    const auto& [linedefs_data, linedefs_data_size] = *linedefs_opt;
+    const auto& [segs_data, segs_data_size] = *segs_opt;
+    const auto& [subsectors_data, subsectors_data_size] = *subsectors_opt;
+    map->LoadFromDoomData(vertexes_data, vertexes_data_size, segs_data, segs_data_size,
+                          subsectors_data, subsectors_data_size, linedefs_data, linedefs_data_size);
+
+    // const u8* data = *data_opt;
+    // u32 data_offset = 0;
+
+    // Pull out the palettes.
+
+    // return palettes;
+
+    return true;
+}
+
+// ------------------------------------------------------------------------------------------------
 struct CameraState {
     common::Vec2f pos;
     common::Vec2f dir;
@@ -318,8 +364,8 @@ struct RenderData {
 };
 
 void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int y_lo, int y_hi,
-                       f32 x_along_texture, u32 x_base_offset, u32 y_base_offset,
-                       f32 texture_z_height, const doom::Patch& patch, const core::Palette& palette,
+                       f32 x_along_texture, u32 x_base_offset, u32 y_base_offset, f32 column_height,
+                       const doom::Patch& patch, const core::Palette& palette,
                        const core::Colormap& colormap, const RenderData& render_data) {
     // TODO: for now, ignore y_base_offset.
 
@@ -331,10 +377,10 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
     // y_upper = screen y coordinate of top of column (can exceed screen bounds)
     // y_lo    = screen y coordinate where we end drawing (does not exceed screen bounds)
     // y_hi    = screen y coordinate where we start drawing (does not exceed screen bounds)
-    // texture_z_height = real-world height of the painting surface
+    // column_height = real-world height of the painting surface
 
     // How many patch pixels high the column is.
-    f32 y_patch_height_pix = render_data.n_pixels_per_world_unit * texture_z_height;
+    f32 y_patch_height_pix = render_data.n_pixels_per_world_unit * column_height;
 
     // y_patch = m * y_screen + b for converting screen to patch coordinate
     //                         0 = m * y_upper + b   -> b = -m * y_upper
@@ -345,12 +391,9 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
 
     f32 m = (f32)(y_patch_height_pix - 1.0f) / (y_lower - y_upper);
 
-    // the number of (continuous) patch pixels y changes per screen pixel
+    // The number of (continuous) patch pixels y changes per screen pixel
     f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes up by 1, y_patch goes up this much
     f32 y_screen_step_per_patch_pixel = 1.0f / m;
-
-    // The (continuous) texture y pixel we are at at the top of the rendered image
-    // f32 y_patch = m * (2 * y_upper - y_hi) + b;
 
     f32 y_patch = 0.0f;
     f32 y_screen = y_upper;
@@ -517,13 +560,14 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
                 }
             }
 
+            // TODO: If a portal, the z on the other side is different
             f32 half_screen_size_y = render_data.half_screen_size_y;
             int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera.z));
             int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera.z));
             int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera.z));
             int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
 
-            // Calculate where along the segment we intersected.
+            // Calculate where along the segment we intersected
             f32 v_face_len = common::Norm(v_face);
             f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
 
@@ -553,10 +597,10 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
 
             // Render the upper texture
             if (y_upper < y_hi) {
-                f32 texture_z_height = z_ceil - z_upper;
+                f32 column_height = z_ceil - z_upper;
                 RenderPatchColumn(pixels, x, y_upper, y_ceil, y_upper, y_hi, x_along_texture,
                                   side_info->texture_info_upper.x_offset,
-                                  side_info->texture_info_upper.y_offset, texture_z_height,
+                                  side_info->texture_info_upper.y_offset, column_height,
                                   patches[side_info->texture_info_upper.texture_id], palette,
                                   colormap, render_data);
                 y_hi = y_upper;
@@ -570,10 +614,10 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
 
             // Render the lower texture
             if (y_lower > y_lo) {
-                f32 texture_z_height = z_lower - z_floor;
+                f32 column_height = z_lower - z_floor;
                 RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, y_lower, x_along_texture,
                                   side_info->texture_info_lower.x_offset,
-                                  side_info->texture_info_lower.y_offset, texture_z_height,
+                                  side_info->texture_info_lower.y_offset, column_height,
                                   patches[side_info->texture_info_lower.texture_id], palette,
                                   colormap, render_data);
                 y_lo = y_lower;
@@ -612,10 +656,10 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
                                  cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
             } else {
                 // The side info has a solid wall.
-                f32 texture_z_height = z_upper - z_lower;
+                f32 column_height = z_upper - z_lower;
                 RenderPatchColumn(pixels, x, y_lower, y_upper, y_lo, y_hi, x_along_texture,
                                   side_info->texture_info_middle.x_offset,
-                                  side_info->texture_info_middle.y_offset, texture_z_height,
+                                  side_info->texture_info_middle.y_offset, column_height,
                                   patches[side_info->texture_info_middle.texture_id], palette,
                                   colormap, render_data);
             }
@@ -795,10 +839,10 @@ int main() {
     ImGui_ImplSDL2_InitForSDLRenderer(editor_window_data.window, editor_window_data.renderer);
     ImGui_ImplSDLRenderer2_Init(editor_window_data.renderer);
 
-    // // Load our DOOM assets
-    // std::unique_ptr<core::WadImporter> doom_assets =
-    //     core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
-    // ASSERT(doom_assets, "Failed to load DOOM Assets");
+    // Load our DOOM assets
+    std::unique_ptr<core::WadImporter> doom_assets =
+        core::WadImporter::LoadFromFile("../toom/assets/DOOM.WAD");
+    ASSERT(doom_assets, "Failed to load DOOM Assets");
 
     // Import our julia assets
     // std::unique_ptr<core::AssetsImporter> julia_assets =
@@ -829,6 +873,9 @@ int main() {
 
     // Import our game data
     ImportGameData(&map, &render_assets);
+
+    // Load a doom level
+    // LoadDoomLevel(&map, "E1M1", doom_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
@@ -1307,18 +1354,18 @@ int main() {
             // Present the option to switch side infos
             ImGui::Text("index:      %lu", selected_edge_index.i);
             if (ImGui::Button("prev")) {
-                selected_edge_index = map.GetMesh().Prev(selected_edge_index);
+                selected_edge_index = mesh.Prev(selected_edge_index);
             }
             ImGui::SameLine();
             if (ImGui::Button("next")) {
-                selected_edge_index = map.GetMesh().Next(selected_edge_index);
+                selected_edge_index = mesh.Next(selected_edge_index);
             }
             ImGui::SameLine();
             if (ImGui::Button("sym")) {
-                selected_edge_index = map.GetMesh().Sym(selected_edge_index);
+                selected_edge_index = mesh.Sym(selected_edge_index);
             }
-            ImGui::Separator();
 
+            ImGui::Separator();
             core::SideInfo* side_info = map.GetEditableSideInfo(selected_edge_index);
             if (side_info != nullptr) {
                 if (ImGui::Button(((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0
@@ -1349,7 +1396,7 @@ int main() {
                 if (ImGui::InputScalar("upper texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_upper.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
-                    // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                    // Ensure it is in bounds.
                     usize n_patches = render_assets.patches.size();
                     if (side_info->texture_info_upper.texture_id >= n_patches) {
                         side_info->texture_info_upper.texture_id = n_patches - 1;
@@ -1372,7 +1419,7 @@ int main() {
                 if (ImGui::InputScalar("middle texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_middle.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
-                    // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                    // Ensure it is in bounds.
                     usize n_patches = render_assets.patches.size();
                     if (side_info->texture_info_middle.texture_id >= n_patches) {
                         side_info->texture_info_middle.texture_id = n_patches - 1;
@@ -1392,7 +1439,7 @@ int main() {
                 if (ImGui::InputScalar("lower texture_id", ImGuiDataType_U16,
                                        (void*)(&side_info->texture_info_lower.texture_id),
                                        (void*)(&step_u16), (void*)(NULL), "%d", flags)) {
-                    // Ensure it is in bounds. TODO: Clamp by number of textures we have.
+                    // Ensure it is in bounds.
                     usize n_patches = render_assets.patches.size();
                     if (side_info->texture_info_lower.texture_id >= n_patches) {
                         side_info->texture_info_lower.texture_id = n_patches - 1;

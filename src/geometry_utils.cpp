@@ -50,6 +50,9 @@ std::vector<Vec2f> ToFloatingPoint(const std::vector<Vec2i>& vertices, float res
 }
 
 // ------------------------------------------------------------------------------------------------
+Vec2f Polar(float r, float theta) { return Vec2f(r * std::cos(theta), r * std::sin(theta)); }
+
+// ------------------------------------------------------------------------------------------------
 float Norm(const Vec2f& v) { return std::hypot(v.x, v.y); }
 float Norm(const Vec2i& v) { return std::hypot(v.x, v.y); }
 Vec2f Normalize(const Vec2f& v) { return v / Norm(v); }

@@ -101,6 +101,9 @@ const T& GetCyclicVertex(const std::vector<T>& polygon, size_t i) {
     return polygon.at(i % polygon.size());
 }
 
+// Construct a polar vector
+Vec2f Polar(float r, float theta);
+
 // Vector 2-norm
 float Norm(const Vec2f& v);
 float Norm(const Vec2i& v);

@@ -255,10 +255,9 @@ core::AssetsExporterEntry ExportPatches(const std::vector<Patch>& patches) {
         buffer.write(reinterpret_cast<const char*>(&patch.origin_y), sizeof(u16));
 
         // Write the column offsets
-        u16 n_column_offsets = patch.column_offsets.size();
-        buffer.write(reinterpret_cast<const char*>(&n_column_offsets), sizeof(u16));
+        // (There are as many column offsets as patch.size_x).
         buffer.write(reinterpret_cast<const char*>(patch.column_offsets.data()),
-                     n_column_offsets * sizeof(u32));
+                     patch.size_x * sizeof(u32));
 
         // Write the post data
         u32 n_bytes_post_data = patch.post_data.size();
@@ -291,8 +290,8 @@ bool ImportPatches(std::vector<doom::Patch>* patches, const core::AssetsExporter
     patches->resize(n_patches);
     for (u32 i = 0; i < n_patches; i++) {
         // Read the 16-char name
-        patches->at(i).name =
-            std::string((char*)(data + offset), 16);  // TODO: Verify that this works
+        // TODO: Verify that this works properly with shorter names
+        patches->at(i).name = std::string((char*)(data + offset), 16);
         offset += 16;
 
         // Read the patch header data
@@ -306,8 +305,7 @@ bool ImportPatches(std::vector<doom::Patch>* patches, const core::AssetsExporter
         offset += sizeof(u16);
 
         // Read the column offsets
-        u16 n_column_offsets = *(u16*)(data + offset);
-        offset += sizeof(u16);
+        u16 n_column_offsets = patches->at(i).size_x;
         patches->at(i).column_offsets.reserve(n_column_offsets);
         while (n_column_offsets > 0) {
             n_column_offsets -= 1;

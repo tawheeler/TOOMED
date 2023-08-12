@@ -64,4 +64,25 @@ std::optional<const u8*> WadImporter::FindEntryData(const std::string& entry_nam
     return std::nullopt;
 }
 
+// ------------------------------------------------------------------------------------------------
+std::optional<int> WadImporter::FindEntryDataIndex(const std::string& entry_name) const {
+    for (int i = 0; i < (int)n_entries_; i++) {
+        WadDirectoryEntry* entry = entries_ + i;
+        if (strncmp(entry->name, entry_name.c_str(), 8) == 0) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+// ------------------------------------------------------------------------------------------------
+std::optional<std::pair<const u8*, u32>> WadImporter::GetEntryData(int index) const {
+    if (0 <= index && index < (int)n_entries_) {
+        WadDirectoryEntry* entry = entries_ + index;
+        const u8* ptr = blob_ + entry->byte_offset;
+        return std::make_pair(ptr, entry->size);
+    }
+    return std::nullopt;
+}
+
 }  // namespace core
