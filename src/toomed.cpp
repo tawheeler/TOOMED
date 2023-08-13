@@ -1323,13 +1323,16 @@ int main() {
             static bool vertex_panel_drawn_last_frame = false;
             static common::Vec2f vertex_panel_target;
             if (core::IsValid(selected_vertex_index)) {
+                const core::DelaunayMesh& mesh = map.GetMesh();
+
                 // Vertex panel
                 vertex_panel_drawn_last_frame = true;
                 ImGui::Begin("Vertex");
-                ImGui::Text("index:      %lu", selected_vertex_index.i);
+                ImGui::Text("qe index:      %lu", selected_vertex_index.i);
+                ImGui::Text("vx index:      %lu",
+                            mesh.GetVertexData(selected_vertex_index).i_self.i);
                 ImGui::Separator();
 
-                const core::DelaunayMesh& mesh = map.GetMesh();
                 const auto& v = mesh.GetVertex(selected_vertex_index);
                 if (!vertex_panel_drawn_last_frame || !io.WantCaptureMouse) {
                     vertex_panel_target = v;
@@ -1343,6 +1346,31 @@ int main() {
             } else {
                 vertex_panel_drawn_last_frame = false;
             }
+        }
+
+        {
+            ImGui::Begin("EnforceEdge");
+            const core::DelaunayMesh& mesh = map.GetMesh();
+
+            static int int_src = 0;
+            static int int_dst = 0;
+            ImGui::InputInt("qe src: ", &int_src);
+            ImGui::InputInt("qe dst: ", &int_dst);
+
+            static bool success = true;
+            if (ImGui::Button("enforce edge")) {
+                core::QuarterEdgeIndex qe_src = {int_src};
+                core::QuarterEdgeIndex qe_dst = {int_dst};
+
+                if (mesh.IsPrimal(qe_src)) {
+                    success = map.MaybeEnforceEdge(qe_src, qe_dst);
+                } else {
+                    success = false;
+                }
+            }
+            ImGui::Text("success: %s", success ? "SUCCESS" : "FAILURE");
+
+            ImGui::End();
         }
 
         // Side Info panel

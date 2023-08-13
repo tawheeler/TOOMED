@@ -1010,21 +1010,11 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
 }
 
 // ------------------------------------------------------------------------------------------------
-bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b) {
-    // TODO: If we have vertices intersecting the edge, we should split our constrained edge
-    //       by those vertices and call this for each sub-edge.
-
-    // TODO: If we try to constrain an edge that overlaps with an already-constrained edge,
-    //       then we need to produce an intersection and fix it that way.
-
-    if (!IsValid(qe_a)) {
-        return false;
-    }
-
-    VertexIndex i_vertex_a = GetVertexIndex(qe_a);
-    if (i_vertex_a == i_vertex_b) {
-        return false;  // Cannot add self-edges
-    }
+DelaunayMesh::EnforceEdgeInternalResult DelaunayMesh::EnforceEdgeInternal(QuarterEdgeIndex qe_a,
+                                                                          VertexIndex i_vertex_b) {
+    EnforceEdgeInternalResult result;
+    result.success = false;
+    result.progress = false;
 
     // Find either an existing quarter edge from A to B, or the quarter edge from A to C that is
     // immediately counter-clockwise of A->B.
@@ -1039,8 +1029,11 @@ bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b) {
 
         bool flipped = MaybeFlipEdge(qe_cd);
         if (!flipped) {
-            return false;  // FAILED!
+            return result;  // FAILED!
         }
+
+        // Flipped an edge
+        result.progress = true;
 
         // After flipping, we would have an edge pointing from A to E, where E completes the quad
         // on the other side of CD from A. It is possible that E = B, or that E lies on either side
@@ -1049,7 +1042,44 @@ bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b) {
         qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
     }
 
-    return true;
+    result.success = true;
+    return result;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b) {
+    // TODO: If we have vertices intersecting the edge, we should split our constrained edge
+    //       by those vertices and call this for each sub-edge.
+
+    // TODO: If we try to constrain an edge that overlaps with an already-constrained edge,
+    //       then we need to produce an intersection and fix it that way.
+
+    if (!IsValid(qe_a) || !IsValid(qe_b)) {
+        return false;
+    }
+
+    VertexIndex i_vertex_a = GetVertexIndex(qe_a);
+    VertexIndex i_vertex_b = GetVertexIndex(qe_b);
+    if (i_vertex_a == i_vertex_b) {
+        return false;  // Cannot add self-edges
+    }
+
+    // Tackle this problem from both directions until solved or no progress is made.
+    bool progress = true;
+    bool success = false;
+    while (progress && !success) {
+        progress = false;
+
+        EnforceEdgeInternalResult result = EnforceEdgeInternal(qe_a, i_vertex_b);
+        progress |= result.progress;
+        success |= result.success;
+
+        result = EnforceEdgeInternal(qe_b, i_vertex_a);
+        progress |= result.progress;
+        success |= result.success;
+    }
+
+    return success;
 }
 
 }  // namespace core

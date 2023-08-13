@@ -205,12 +205,11 @@ class DelaunayMesh {
     // the enforcement.
     void EnforceLocallyDelaunay(QuarterEdgeIndex qe_start);
 
-    // Update the mesh such that there is an edge between A and B, where A is given by a primal
-    // quarter edge and B is given as a vertex index.
-    // The method returns true if the modification was successful.
-    // If unsuccessful, it will not have modified the mesh.
-    // This method will not succeed if there is a constrained edge that overlaps AB.
-    bool EnforceEdge(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b);
+    // Update the mesh such that there is an edge between vertices A and B, where A and B are given
+    // by primal quarter edges. The method returns true if the modification was successful.
+    // The current implentation may partially modify the mesh even if unsuccessful. This method will
+    // not succeed if there is a constrained edge that overlaps AB.
+    bool EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
 
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.
@@ -265,6 +264,12 @@ class DelaunayMesh {
     // A utility method for flipping an edge within a quadrilateral.
     // Should only be called if the bounding quad is convex.
     void FlipEdgeImpl(QuarterEdgeIndex qe);
+
+    struct EnforceEdgeInternalResult {
+        bool success;   // whether the operation succeeded
+        bool progress;  // whether progress was made
+    };
+    EnforceEdgeInternalResult EnforceEdgeInternal(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b);
 
     // The maximum radius that a point can be from the origin
     float bounding_radius_;
