@@ -118,150 +118,6 @@ bool DelaunayMesh::LoadFromData(const u8* data) {
 }
 
 // ------------------------------------------------------------------------------------------------
-bool DelaunayMesh::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size,
-                                    const u8* segs_data, u32 segs_data_size,
-                                    const u8* subsectors_data, u32 subsectors_data_size,
-                                    const u8* linedefs_data, u32 linedefs_data_size) {
-    // Reset the mesh.
-
-    vertices_.clear();
-    i_vertex_alive_first_ = {kInvalidIndex};
-    i_vertex_alive_last_ = {kInvalidIndex};
-    i_vertex_free_first_ = {kInvalidIndex};
-    i_vertex_free_last_ = {kInvalidIndex};
-    n_vertices_ = 0;
-
-    quarter_edges_.clear();
-    i_qe_alive_first_ = {kInvalidIndex};
-    i_qe_alive_last_ = {kInvalidIndex};
-    i_qe_free_first_ = {kInvalidIndex};
-    i_qe_free_last_ = {kInvalidIndex};
-    n_quarter_edges_ = 0;
-
-    // Add the bounding vertices
-    constexpr f32 kDoomUnitsPerWorldUnit = 64.0f;  // DOOM units are per-pixel.
-    {
-        constexpr f32 kMaxDoomX = std::numeric_limits<i16>::max() / kDoomUnitsPerWorldUnit;
-        bounding_radius_ = kMaxDoomX * 1.41;
-
-        // The triangle radius is 2r + eps(), which guarantees that it is large enough.
-        float r = 2 * bounding_radius_ + min_dist_to_edge_ + min_dist_to_vertex_;
-
-        VertexIndex a = AddVertex(r * std::cos(90 * M_PI / 180.0), r * std::sin(90 * M_PI / 180.0));
-        VertexIndex b =
-            AddVertex(r * std::cos(210 * M_PI / 180.0), r * std::sin(210 * M_PI / 180.0));
-        VertexIndex c =
-            AddVertex(r * std::cos(-30 * M_PI / 180.0), r * std::sin(-30 * M_PI / 180.0));
-
-        QuarterEdgeIndex ab = AddEdge(a, b);
-        QuarterEdgeIndex bc = AddEdge(b, c);
-        QuarterEdgeIndex ca = AddEdge(c, a);
-
-        Splice(Sym(ab), bc);
-        Splice(Sym(bc), ca);
-        Splice(Sym(ca), ab);
-    }
-
-    // Load the vertices
-    u32 sizeof_vertex = 4;
-    u32 n_vertices = vertex_data_size / sizeof_vertex;
-    std::vector<common::Vec2f> doom_vertices;
-    doom_vertices.reserve(n_vertices);
-
-    u32 vertices_offset = 0;
-    for (u32 i = 0; i < n_vertices; i++) {
-        i16 x = *(i16*)(vertex_data + vertices_offset);
-        vertices_offset += sizeof(i16);
-        i16 y = *(i16*)(vertex_data + vertices_offset);
-        vertices_offset += sizeof(i16);
-
-        doom_vertices.emplace_back(x / kDoomUnitsPerWorldUnit, y / kDoomUnitsPerWorldUnit);
-    }
-
-    // Add the linedefs one at a time.
-    // Introduce the vertices. If there already is a vertex, that is okay.
-    // Ensure that we flip edges such that the new linedefs have corresponding edges.
-    // Constrain those edges.
-
-    // Linedefs
-    struct Linedef {
-        i16 i_vertex_start;
-        i16 i_vertex_end;
-        i16 flags;
-        i16 special_type;
-        i16 sector_tag;
-        i16 i_sidedef_front;
-        i16 i_sidedef_back;
-    };
-    u32 n_linedefs = linedefs_data_size / sizeof(Linedef);
-
-    u32 linedefs_offset = 0;
-    for (u32 i_linedef = 0; i_linedef < n_linedefs; i_linedef++) {
-        Linedef linedef = *(Linedef*)(linedefs_data + linedefs_offset);
-        linedefs_offset += sizeof(Linedef);
-
-        const common::Vec2f& a = doom_vertices[linedef.i_vertex_start];
-        const common::Vec2f& b = doom_vertices[linedef.i_vertex_end];
-
-        // Insert vertex a.
-        // The vertex should either be in a face or coincident with an existing point.
-        // TODO: It may be possible to be on an edge, but the edge should not be constrained.
-        InsertVertexResult res_a = InsertVertex(a);
-        if (res_a.category != InsertVertexResultCategory::IN_FACE &&
-            res_a.category != InsertVertexResultCategory::COINCIDENT) {
-            return false;
-        } else if (res_a.category == InsertVertexResultCategory::IN_FACE) {
-            EnforceLocallyDelaunay(res_a.i_qe);
-        }
-
-        // Insert vertex b.
-        InsertVertexResult res_b = InsertVertex(b);
-        if (res_b.category != InsertVertexResultCategory::IN_FACE &&
-            res_b.category != InsertVertexResultCategory::COINCIDENT) {
-            return false;
-        } else if (res_a.category == InsertVertexResultCategory::IN_FACE) {
-            EnforceLocallyDelaunay(res_b.i_qe);
-        }
-
-        // Now ensure that there is a line between A and B.
-        // If there is not, flip edges until there is.
-        // TODO
-    }
-
-    // Segs and Subsectors
-    // struct Seg {
-    //     i16 i_vertex_start;
-    //     i16 i_vertex_end;
-    //     i16 discrete_angle;
-    //     i16 i_linedef;
-    //     i16 is_along_linedef;
-    //     i16 offset;  // distance along linedef to start of seg
-    // };
-    // u32 n_segs = segs_data_size / sizeof(Seg);
-
-    // struct SubsectorEntry {
-    //     i16 n_segs;
-    //     i16 i_seg_start;
-    // };
-    // u32 n_subsectors = subsectors_data_size / sizeof(SubsectorEntry);
-
-    // std::vector<common::Vec2f> sector_vs;
-    // SubsectorEntry subsector = *(SubsectorEntry*)(subsectors_data + 0);
-    // for (i16 i_seg = subsector.i_seg_start; i_seg < subsector.i_seg_start + subsector.n_segs;
-    //      i_seg++) {
-    //     Seg seg = *(Seg*)(segs_data + sizeof(Seg) * i_seg);
-    //     common::Vec2f v_start = vertices_[seg.i_vertex_start].v;
-    //     common::Vec2f b = vertices_[seg.i_vertex_end].v;
-    //     common::Vec2f dir = common::Normalize(b - v_start);
-    //     common::Vec2f a = v_start + dir * seg.offset;
-    //     sector_vs.push_back(a);
-    //     sector_vs.push_back(b);
-    // }
-
-    return true;
-}
-
-// ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::Next(QuarterEdgeIndex qe) const { return Get(qe).i_nxt; }
 
 // ------------------------------------------------------------------------------------------------
@@ -753,6 +609,17 @@ void DelaunayMesh::EnforceLocallyDelaunay(QuarterEdgeIndex qe_start) {
 }
 
 // ------------------------------------------------------------------------------------------------
+QuarterEdgeIndex DelaunayMesh::GetQuarterEdge(VertexIndex a) const {
+    for (const QuarterEdge& qe : quarter_edges_) {
+        if (qe.i_vertex == a) {
+            return qe.i_self;
+        }
+    }
+
+    return QuarterEdgeIndex({kInvalidIndex});
+}
+
+// ------------------------------------------------------------------------------------------------
 QuarterEdgeIndex DelaunayMesh::GetQuarterEdge(VertexIndex a, VertexIndex b) const {
     // If we already have an edge between these two vertices, we are done.
     for (const QuarterEdge& qe : quarter_edges_) {
@@ -1013,7 +880,7 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
 DelaunayMesh::EnforceEdgeInternalResult DelaunayMesh::EnforceEdgeInternal(QuarterEdgeIndex qe_a,
                                                                           VertexIndex i_vertex_b) {
     EnforceEdgeInternalResult result;
-    result.success = false;
+    result.qe_ab = {kInvalidIndex};
     result.progress = false;
 
     // Find either an existing quarter edge from A to B, or the quarter edge from A to C that is
@@ -1042,12 +909,12 @@ DelaunayMesh::EnforceEdgeInternalResult DelaunayMesh::EnforceEdgeInternal(Quarte
         qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
     }
 
-    result.success = true;
+    result.qe_ab = qe_a;
     return result;
 }
 
 // ------------------------------------------------------------------------------------------------
-bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b) {
+QuarterEdgeIndex DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b) {
     // TODO: If we have vertices intersecting the edge, we should split our constrained edge
     //       by those vertices and call this for each sub-edge.
 
@@ -1055,31 +922,38 @@ bool DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b) {
     //       then we need to produce an intersection and fix it that way.
 
     if (!IsValid(qe_a) || !IsValid(qe_b)) {
-        return false;
+        return {kInvalidIndex};
     }
 
     VertexIndex i_vertex_a = GetVertexIndex(qe_a);
     VertexIndex i_vertex_b = GetVertexIndex(qe_b);
     if (i_vertex_a == i_vertex_b) {
-        return false;  // Cannot add self-edges
+        return {kInvalidIndex};  // Cannot add self-edges
     }
 
     // Tackle this problem from both directions until solved or no progress is made.
     bool progress = true;
     bool success = false;
+    QuarterEdgeIndex qe_ab = {kInvalidIndex};
     while (progress && !success) {
         progress = false;
 
         EnforceEdgeInternalResult result = EnforceEdgeInternal(qe_a, i_vertex_b);
         progress |= result.progress;
-        success |= result.success;
+        qe_ab = result.qe_ab;
+        success |= IsValid(qe_ab);
+
+        if (success) {
+            break;
+        }
 
         result = EnforceEdgeInternal(qe_b, i_vertex_a);
         progress |= result.progress;
-        success |= result.success;
+        qe_ab = result.qe_ab;
+        success |= IsValid(qe_ab);
     }
 
-    return success;
+    return qe_ab;
 }
 
 }  // namespace core

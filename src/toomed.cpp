@@ -875,7 +875,7 @@ int main() {
     ImportGameData(&map, &render_assets);
 
     // Load a doom level
-    // LoadDoomLevel(&map, "E1M1", doom_assets);
+    LoadDoomLevel(&map, "E1M1", doom_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
@@ -1348,30 +1348,30 @@ int main() {
             }
         }
 
-        {
-            ImGui::Begin("EnforceEdge");
-            const core::DelaunayMesh& mesh = map.GetMesh();
+        // {
+        //     ImGui::Begin("EnforceEdge");
+        //     const core::DelaunayMesh& mesh = map.GetMesh();
 
-            static int int_src = 0;
-            static int int_dst = 0;
-            ImGui::InputInt("qe src: ", &int_src);
-            ImGui::InputInt("qe dst: ", &int_dst);
+        //     static int int_src = 0;
+        //     static int int_dst = 0;
+        //     ImGui::InputInt("qe src: ", &int_src);
+        //     ImGui::InputInt("qe dst: ", &int_dst);
 
-            static bool success = true;
-            if (ImGui::Button("enforce edge")) {
-                core::QuarterEdgeIndex qe_src = {int_src};
-                core::QuarterEdgeIndex qe_dst = {int_dst};
+        //     static bool success = true;
+        //     if (ImGui::Button("enforce edge")) {
+        //         core::QuarterEdgeIndex qe_src = {int_src};
+        //         core::QuarterEdgeIndex qe_dst = {int_dst};
 
-                if (mesh.IsPrimal(qe_src)) {
-                    success = map.MaybeEnforceEdge(qe_src, qe_dst);
-                } else {
-                    success = false;
-                }
-            }
-            ImGui::Text("success: %s", success ? "SUCCESS" : "FAILURE");
+        //         if (mesh.IsPrimal(qe_src)) {
+        //             success = map.MaybeEnforceEdge(qe_src, qe_dst);
+        //         } else {
+        //             success = false;
+        //         }
+        //     }
+        //     ImGui::Text("success: %s", success ? "SUCCESS" : "FAILURE");
 
-            ImGui::End();
-        }
+        //     ImGui::End();
+        // }
 
         // Side Info panel
         if (core::IsValid(selected_edge_index)) {

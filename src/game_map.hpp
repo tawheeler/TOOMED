@@ -100,7 +100,7 @@ class GameMap {
     bool MaybeFlipEdge(QuarterEdgeIndex qe_primal);
 
     bool MaybeEnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b) {
-        return mesh_.EnforceEdge(qe_a, qe_b);
+        return IsValid(mesh_.EnforceEdge(qe_a, qe_b));
     }
 
     // // Write the GameMap entries into the exporter.

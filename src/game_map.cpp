@@ -432,9 +432,118 @@ bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, cons
                                u32 segs_data_size, const u8* subsectors_data,
                                u32 subsectors_data_size, const u8* linedefs_data,
                                u32 linedefs_data_size) {
-    mesh_.LoadFromDoomData(vertex_data, vertex_data_size, segs_data, segs_data_size,
-                           subsectors_data, subsectors_data_size, linedefs_data,
-                           linedefs_data_size);
+    // Reset the mesh with one that is guaranteed to be large enough to hold the Doom level.
+    constexpr f32 kDoomUnitsPerWorldUnit = 64.0f;  // DOOM units are per-pixel.
+    constexpr f32 kMaxDoomX = std::numeric_limits<i16>::max() / kDoomUnitsPerWorldUnit;
+    mesh_ = DelaunayMesh(kMaxDoomX * 1.41 + 50.0, MESH_MIN_DIST_TO_VERTEX, MESH_MIN_DIST_TO_EDGE);
+
+    // Load the vertices into a temp vector.
+    u32 sizeof_vertex = 4;
+    u32 n_vertices = vertex_data_size / sizeof_vertex;
+    std::vector<common::Vec2f> doom_vertices;
+    doom_vertices.reserve(n_vertices);
+
+    u32 vertices_offset = 0;
+    for (u32 i = 0; i < n_vertices; i++) {
+        i16 x = *(i16*)(vertex_data + vertices_offset);
+        vertices_offset += sizeof(i16);
+        i16 y = *(i16*)(vertex_data + vertices_offset);
+        vertices_offset += sizeof(i16);
+
+        doom_vertices.emplace_back(x / kDoomUnitsPerWorldUnit, y / kDoomUnitsPerWorldUnit);
+    }
+
+    // Keep track of the vertex indices assigned to each doom vertex.
+    // Unlike quarter edge indices, these are not going to change as we add more lines.
+    std::vector<VertexIndex> vertex_indices(n_vertices, {kInvalidIndex});
+
+    // Add the linedefs one at a time.
+    // Introduce the vertices. If there already is a vertex, that is okay.
+    // Ensure that we flip edges such that the new linedefs have corresponding edges.
+    // Constrain those edges.
+
+    // Linedefs
+    struct Linedef {
+        i16 i_vertex_start;
+        i16 i_vertex_end;
+        i16 flags;
+        i16 special_type;
+        i16 sector_tag;
+        i16 i_sidedef_front;
+        i16 i_sidedef_back;
+    };
+    u32 n_linedefs = linedefs_data_size / sizeof(Linedef);
+
+    u32 linedefs_offset = 0;
+    for (u32 i_linedef = 0; i_linedef < n_linedefs; i_linedef++) {
+        Linedef linedef = *(Linedef*)(linedefs_data + linedefs_offset);
+        linedefs_offset += sizeof(Linedef);
+
+        // Insert vertex a and b.
+        // The vertex should either be in a face or coincident with an existing point.
+        // TODO: It may be possible to be on an edge, but the edge should not be constrained.
+        for (i16 i_vertex : {linedef.i_vertex_start, linedef.i_vertex_end}) {
+            const common::Vec2f& v = doom_vertices[i_vertex];
+
+            DelaunayMesh::InsertVertexResult res = mesh_.InsertVertex(v);
+            if (res.category == DelaunayMesh::InsertVertexResultCategory::OUT_OF_BOUNDS) {
+                return false;
+            } else if (res.category == DelaunayMesh::InsertVertexResultCategory::IN_FACE ||
+                       res.category == DelaunayMesh::InsertVertexResultCategory::ON_EDGE) {
+                mesh_.EnforceLocallyDelaunay(res.i_qe);
+                vertex_indices[i_vertex] = mesh_.GetVertexIndex(res.i_qe);
+            }
+        }
+
+        // Now ensure that there is a line between A and B.
+        // If there is not, flip edges until there is.
+        QuarterEdgeIndex qe_a = mesh_.GetQuarterEdge(vertex_indices[linedef.i_vertex_start]);
+        QuarterEdgeIndex qe_b = mesh_.GetQuarterEdge(vertex_indices[linedef.i_vertex_end]);
+        if (!IsValid(qe_a) || !IsValid(qe_b)) {
+            return false;
+        }
+
+        QuarterEdgeIndex qe_ab = mesh_.EnforceEdge(qe_a, qe_b);
+        if (!IsValid(qe_ab)) {
+            return false;
+        }
+
+        mesh_.ConstrainEdge(qe_ab);
+    }
+
+    // TODO: Continue here
+
+    // Segs and Subsectors
+    // struct Seg {
+    //     i16 i_vertex_start;
+    //     i16 i_vertex_end;
+    //     i16 discrete_angle;
+    //     i16 i_linedef;
+    //     i16 is_along_linedef;
+    //     i16 offset;  // distance along linedef to start of seg
+    // };
+    // u32 n_segs = segs_data_size / sizeof(Seg);
+
+    // struct SubsectorEntry {
+    //     i16 n_segs;
+    //     i16 i_seg_start;
+    // };
+    // u32 n_subsectors = subsectors_data_size / sizeof(SubsectorEntry);
+
+    // std::vector<common::Vec2f> sector_vs;
+    // SubsectorEntry subsector = *(SubsectorEntry*)(subsectors_data + 0);
+    // for (i16 i_seg = subsector.i_seg_start; i_seg < subsector.i_seg_start + subsector.n_segs;
+    //      i_seg++) {
+    //     Seg seg = *(Seg*)(segs_data + sizeof(Seg) * i_seg);
+    //     common::Vec2f v_start = vertices_[seg.i_vertex_start].v;
+    //     common::Vec2f b = vertices_[seg.i_vertex_end].v;
+    //     common::Vec2f dir = common::Normalize(b - v_start);
+    //     common::Vec2f a = v_start + dir * seg.offset;
+    //     sector_vs.push_back(a);
+    //     sector_vs.push_back(b);
+    // }
+
+    return true;
 }
 
 // ------------------------------------------------------------------------------------------------

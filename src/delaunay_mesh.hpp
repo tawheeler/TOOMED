@@ -96,9 +96,6 @@ class DelaunayMesh {
 
     void Clear();
     bool LoadFromData(const u8* data);
-    bool LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* segs_data,
-                          u32 segs_data_size, const u8* subsectors_data, u32 subsectors_data_size,
-                          const u8* linedefs_data, u32 linedefs_data_size);
 
     const common::Vec2f& GetVertex(VertexIndex i) const { return vertices_[i.i].v; }
     const common::Vec2f& GetVertex(QuarterEdgeIndex i) const {
@@ -109,6 +106,10 @@ class DelaunayMesh {
         return GetVertexData(quarter_edges_[i.i].i_vertex);
     }
     const QuarterEdge& GetQuarterEdge(QuarterEdgeIndex i) const { return quarter_edges_[i.i]; }
+
+    // Get any primal quarter edge whose origin is the given vertex index, if one exists.
+    // Note that the current implementation loops over all quarter edges.
+    QuarterEdgeIndex GetQuarterEdge(VertexIndex a) const;
 
     // Get the quarter edge pointing from i to j, if it exists.
     // Note that the current implementation loops over all quarter edges.
@@ -206,10 +207,11 @@ class DelaunayMesh {
     void EnforceLocallyDelaunay(QuarterEdgeIndex qe_start);
 
     // Update the mesh such that there is an edge between vertices A and B, where A and B are given
-    // by primal quarter edges. The method returns true if the modification was successful.
-    // The current implentation may partially modify the mesh even if unsuccessful. This method will
-    // not succeed if there is a constrained edge that overlaps AB.
-    bool EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
+    // by primal quarter edges. The method returns the quarter edge from a to b if the modification
+    // was successful, and the invalid quarter edge otherwise.
+    // The current implentation may partially modify the mesh even if unsuccessful.
+    // This method will not succeed if there is a constrained edge that overlaps AB.
+    QuarterEdgeIndex EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
 
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.
@@ -266,8 +268,8 @@ class DelaunayMesh {
     void FlipEdgeImpl(QuarterEdgeIndex qe);
 
     struct EnforceEdgeInternalResult {
-        bool success;   // whether the operation succeeded
         bool progress;  // whether progress was made
+        QuarterEdgeIndex qe_ab;
     };
     EnforceEdgeInternalResult EnforceEdgeInternal(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b);
 
