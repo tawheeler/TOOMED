@@ -6,6 +6,7 @@
 
 #include "assets_exporter.hpp"
 #include "delaunay_mesh.hpp"
+#include "render_assets.hpp"
 #include "typedefs.hpp"
 
 #define MESH_BOUNDING_RADIUS 1000.0f
@@ -110,9 +111,11 @@ class GameMap {
     bool Import(const core::AssetsExporter& exporter);
 
     // Load a game map from DOOM data.
-    bool LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* segs_data,
-                          u32 segs_data_size, const u8* subsectors_data, u32 subsectors_data_size,
-                          const u8* linedefs_data, u32 linedefs_data_size);
+    bool LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* sidedefs_data,
+                          u32 sidedefs_data_size, const u8* segs_data, u32 segs_data_size,
+                          const u8* subsectors_data, u32 subsectors_data_size,
+                          const u8* linedefs_data, u32 linedefs_data_size,
+                          const core::RenderAssets& render_assets);
 
     // Finds a vertex (as a primal quarter edge) near the given position, if there is one, using the
     // provided dual quarter edge representing the face containing pos to more quickly locate

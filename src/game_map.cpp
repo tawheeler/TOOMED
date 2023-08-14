@@ -428,10 +428,14 @@ bool GameMap::Import(const AssetsExporter& exporter) {
 }
 
 // ------------------------------------------------------------------------------------------------
-bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* segs_data,
-                               u32 segs_data_size, const u8* subsectors_data,
-                               u32 subsectors_data_size, const u8* linedefs_data,
-                               u32 linedefs_data_size) {
+bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* sidedefs_data,
+                               u32 sidedefs_data_size, const u8* segs_data, u32 segs_data_size,
+                               const u8* subsectors_data, u32 subsectors_data_size,
+                               const u8* linedefs_data, u32 linedefs_data_size,
+                               const core::RenderAssets& render_assets) {
+    // Empty the game map.
+    Clear();
+
     // Reset the mesh with one that is guaranteed to be large enough to hold the Doom level.
     constexpr f32 kDoomUnitsPerWorldUnit = 64.0f;  // DOOM units are per-pixel.
     constexpr f32 kMaxDoomX = std::numeric_limits<i16>::max() / kDoomUnitsPerWorldUnit;
@@ -452,6 +456,16 @@ bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, cons
 
         doom_vertices.emplace_back(x / kDoomUnitsPerWorldUnit, y / kDoomUnitsPerWorldUnit);
     }
+
+    // Sidedefs
+    struct Sidedef {
+        i16 offset_x;
+        i16 offset_y;
+        u8 texture_name_upper[8];
+        u8 texture_name_lower[8];
+        u8 texture_name_middle[8];
+        i16 sector_index;
+    };
 
     // Keep track of the vertex indices assigned to each doom vertex.
     // Unlike quarter edge indices, these are not going to change as we add more lines.
@@ -509,9 +523,65 @@ bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, cons
         }
 
         mesh_.ConstrainEdge(qe_ab);
+
+        // Next, assign sidedefs as appropriate.
+        qe_a = qe_ab;
+        qe_b = mesh_.Sym(qe_a);
+
+        // Always asign the front sidedef.
+        // Note that DOOM convention has the opposite handedness, so we add qe_b.
+        if (!AddSideInfo(qe_b)) {
+            return false;
+        }
+        SideInfo* side_info = GetEditableSideInfo(qe_b);
+        Sidedef sidedef = *(Sidedef*)(sidedefs_data + linedef.i_sidedef_front * sizeof(Sidedef));
+
+        side_info->sector_id = sidedef.sector_index;
+        side_info->texture_info_lower.texture_id =
+            FindTextureIdForDoomTextureName(sidedef.texture_name_lower, render_assets).value_or(0);
+        side_info->texture_info_lower.x_offset = sidedef.offset_x;
+        side_info->texture_info_lower.y_offset = sidedef.offset_y;
+        side_info->texture_info_upper.texture_id =
+            FindTextureIdForDoomTextureName(sidedef.texture_name_upper, render_assets).value_or(0);
+        side_info->texture_info_upper.x_offset = sidedef.offset_x;
+        side_info->texture_info_upper.y_offset = sidedef.offset_y;
+        side_info->texture_info_middle.texture_id =
+            FindTextureIdForDoomTextureName(sidedef.texture_name_middle, render_assets).value_or(0);
+        side_info->texture_info_middle.x_offset = sidedef.offset_x;
+        side_info->texture_info_middle.y_offset = sidedef.offset_y;
+        side_info->qe_portal = {kInvalidIndex};
+
+        // If there is a sidedef on the other side, add that.
+        constexpr u16 LINEDEF_FLAG_TWO_SIDED = 0x0004;
+        if ((linedef.flags & LINEDEF_FLAG_TWO_SIDED) > 0) {
+            // @efficiency - reuse the previous code for inserting a sideinfo.
+            if (!AddSideInfo(qe_a)) {
+                return false;
+            }
+            SideInfo* side_info = GetEditableSideInfo(qe_a);
+            Sidedef sidedef = *(Sidedef*)(sidedefs_data + linedef.i_sidedef_back * sizeof(Sidedef));
+
+            side_info->sector_id = sidedef.sector_index;
+            side_info->texture_info_lower.texture_id =
+                FindTextureIdForDoomTextureName(sidedef.texture_name_lower, render_assets)
+                    .value_or(0);
+            side_info->texture_info_lower.x_offset = sidedef.offset_x;
+            side_info->texture_info_lower.y_offset = sidedef.offset_y;
+            side_info->texture_info_upper.texture_id =
+                FindTextureIdForDoomTextureName(sidedef.texture_name_upper, render_assets)
+                    .value_or(0);
+            side_info->texture_info_upper.x_offset = sidedef.offset_x;
+            side_info->texture_info_upper.y_offset = sidedef.offset_y;
+            side_info->texture_info_middle.texture_id =
+                FindTextureIdForDoomTextureName(sidedef.texture_name_middle, render_assets)
+                    .value_or(0);
+            side_info->texture_info_middle.x_offset = sidedef.offset_x;
+            side_info->texture_info_middle.y_offset = sidedef.offset_y;
+            side_info->qe_portal = {kInvalidIndex};
+        }
     }
 
-    // TODO: Continue here
+    // TODO: Continue here and load sectors
 
     // Segs and Subsectors
     // struct Seg {

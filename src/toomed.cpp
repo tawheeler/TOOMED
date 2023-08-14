@@ -38,7 +38,8 @@
 
 // ------------------------------------------------------------------------------------------------
 bool LoadDoomLevel(core::GameMap* map, const std::string& name,
-                   const std::unique_ptr<core::WadImporter>& importer) {
+                   const std::unique_ptr<core::WadImporter>& importer,
+                   const core::RenderAssets& render_assets) {
     auto idx_opt = importer->FindEntryDataIndex(name);
     if (!idx_opt) {
         return false;
@@ -65,12 +66,14 @@ bool LoadDoomLevel(core::GameMap* map, const std::string& name,
         return false;
     }
 
-    const auto& [vertexes_data, vertexes_data_size] = *vertexes_opt;
     const auto& [linedefs_data, linedefs_data_size] = *linedefs_opt;
+    const auto& [sidedefs_data, sidedefs_data_size] = *sidedefs_opt;
+    const auto& [vertexes_data, vertexes_data_size] = *vertexes_opt;
     const auto& [segs_data, segs_data_size] = *segs_opt;
     const auto& [subsectors_data, subsectors_data_size] = *subsectors_opt;
-    map->LoadFromDoomData(vertexes_data, vertexes_data_size, segs_data, segs_data_size,
-                          subsectors_data, subsectors_data_size, linedefs_data, linedefs_data_size);
+    map->LoadFromDoomData(vertexes_data, vertexes_data_size, sidedefs_data, sidedefs_data_size,
+                          segs_data, segs_data_size, subsectors_data, subsectors_data_size,
+                          linedefs_data, linedefs_data_size, render_assets);
 
     // const u8* data = *data_opt;
     // u32 data_offset = 0;
@@ -875,7 +878,7 @@ int main() {
     ImportGameData(&map, &render_assets);
 
     // Load a doom level
-    LoadDoomLevel(&map, "E1M1", doom_assets);
+    LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
