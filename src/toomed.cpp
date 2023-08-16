@@ -54,26 +54,20 @@ bool LoadDoomLevel(core::GameMap* map, const std::string& name,
     auto sidedefs_opt = importer->GetEntryData(lump_index);
     lump_index += 1;
     auto vertexes_opt = importer->GetEntryData(lump_index);
-    lump_index += 1;
-    auto segs_opt = importer->GetEntryData(lump_index);
-    lump_index += 1;
-    auto subsectors_opt = importer->GetEntryData(lump_index);
-    lump_index += 1;  // skip and NODES
+    lump_index += 4;  // skip segs, subsectors, and nodes
     auto sectors_opt = importer->GetEntryData(lump_index);
 
-    if (!linedefs_opt || !sidedefs_opt || !vertexes_opt || !subsectors_opt || !segs_opt ||
-        !sectors_opt) {
+    if (!linedefs_opt || !sidedefs_opt || !vertexes_opt || !sectors_opt) {
         return false;
     }
 
     const auto& [linedefs_data, linedefs_data_size] = *linedefs_opt;
     const auto& [sidedefs_data, sidedefs_data_size] = *sidedefs_opt;
     const auto& [vertexes_data, vertexes_data_size] = *vertexes_opt;
-    const auto& [segs_data, segs_data_size] = *segs_opt;
-    const auto& [subsectors_data, subsectors_data_size] = *subsectors_opt;
-    map->LoadFromDoomData(vertexes_data, vertexes_data_size, sidedefs_data, sidedefs_data_size,
-                          segs_data, segs_data_size, subsectors_data, subsectors_data_size,
-                          linedefs_data, linedefs_data_size, render_assets);
+    const auto& [sectors_data, sectors_data_size] = *sectors_opt;
+    map->LoadFromDoomData(linedefs_data, linedefs_data_size, sidedefs_data, sidedefs_data_size,
+                          vertexes_data, vertexes_data_size, sectors_data, sectors_data_size,
+                          render_assets);
 
     // const u8* data = *data_opt;
     // u32 data_offset = 0;
@@ -234,6 +228,9 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
                 is_portal = is_passable && core::IsValid(side_info->qe_portal);
             }
 
+            // prevent stopping for now
+            stop_at_edge = false;
+
             if (is_portal) {
                 // Calculate where along the segment we intersected.
                 f32 v_face_len = common::Norm(v_face);
@@ -393,6 +390,9 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
     // m = (y_patch_height_pix - 1) / (y_lower - y_upper)
 
     f32 m = (f32)(y_patch_height_pix - 1.0f) / (y_lower - y_upper);
+    if (m >= 0.0) {
+        return;  // This can happen if the y patch height is zero.
+    }
 
     // The number of (continuous) patch pixels y changes per screen pixel
     f32 y_patch_step_per_screen_pixel = m;  // If y_screen goes up by 1, y_patch goes up this much
@@ -460,6 +460,10 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
         return;  // limit the max depth
     }
 
+    if (y_lo >= y_hi) {
+        return;  // We've rendered every pixel
+    }
+
     // Grab the enclosing triangle.
     const core::DelaunayMesh mesh = game_map.GetMesh();
     auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
@@ -521,7 +525,7 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
         pos_next = pos + min_interp * pos_next_delta;
         qe_dual = mesh.Rot(qe_side);
 
-        // Accumulate distance travelled
+        // Accumulate distance traveled
         wall_raycast_radius[x] += min_interp * projection_distance;
 
         const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
@@ -593,16 +597,17 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
             const core::Colormap& colormap = colormaps[colormap_index];
 
             // Render the ceiling above the upper texture
+            y_ceil = std::max(y_ceil, y_lo + 1);
             while (y_hi > y_ceil) {
                 y_hi--;
                 pixels[(y_hi * render_data.screen_size_x) + x] = render_data.color_ceil;
             }
 
             // Render the upper texture
-            if (y_upper < y_hi) {
+            if (y_hi > y_upper) {
                 f32 column_height = z_ceil - z_upper;
-                RenderPatchColumn(pixels, x, y_upper, y_ceil, y_upper, y_hi, x_along_texture,
-                                  side_info->texture_info_upper.x_offset,
+                RenderPatchColumn(pixels, x, y_upper, y_ceil, std::max(y_upper, y_lo), y_hi,
+                                  x_along_texture, side_info->texture_info_upper.x_offset,
                                   side_info->texture_info_upper.y_offset, column_height,
                                   patches[side_info->texture_info_upper.texture_id], palette,
                                   colormap, render_data);
@@ -610,7 +615,8 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
             }
 
             // Render the floor below the lower texture
-            while (y_lo < y_floor) {
+            y_floor = std::min(y_floor, y_hi - 1);
+            while (y_floor > y_lo) {
                 y_lo++;
                 pixels[(y_lo * render_data.screen_size_x) + x] = render_data.color_floor;
             }
@@ -618,8 +624,8 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
             // Render the lower texture
             if (y_lower > y_lo) {
                 f32 column_height = z_lower - z_floor;
-                RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, y_lower, x_along_texture,
-                                  side_info->texture_info_lower.x_offset,
+                RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, std::min(y_lower, y_hi),
+                                  x_along_texture, side_info->texture_info_lower.x_offset,
                                   side_info->texture_info_lower.y_offset, column_height,
                                   patches[side_info->texture_info_lower.texture_id], palette,
                                   colormap, render_data);
@@ -896,7 +902,8 @@ int main() {
     core::ClearKeyboardState(&keyboard_state);
 
     CameraState player_cam = {};
-    player_cam.pos = {5.0, 5.0};
+    // player_cam.pos = {5.0, 5.0};
+    player_cam.pos = {-10.25, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 0.4f;
@@ -907,7 +914,7 @@ int main() {
     render_data.screen_size_x = player_window_data.screen_size_x;
     render_data.screen_size_y = player_window_data.screen_size_y;
     render_data.half_screen_size_y = render_data.screen_size_y / 2.0f;
-    render_data.darkness_per_world_dist = 3.0f;
+    render_data.darkness_per_world_dist = 2.0f;
     render_data.max_render_steps = 64;
     render_data.color_ceil = 0xFF222222;
     render_data.color_floor = 0xFF444444;
@@ -1079,8 +1086,8 @@ int main() {
         u32 color_background = 0x414141FF;
         u32 color_light_background = 0x454545FF;
         u32 color_light_gray = 0x909090FF;
-        u32 color_qe_constrained = 0xAAAACFFF;
-        u32 color_qe_normal = 0xFF48CFFF;
+        u32 color_qe_constrained = 0x52BCC4FF;
+        u32 color_qe_normal = 0x587F82FF;
         u32 color_active = 0xFFA0A0FF;
 
         // ------------------------------------------------------------------------------------------------

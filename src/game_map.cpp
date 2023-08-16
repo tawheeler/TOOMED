@@ -1,5 +1,6 @@
 #include "game_map.hpp"
 
+#include <cstring>
 #include <iostream>
 #include <sstream>
 
@@ -428,11 +429,10 @@ bool GameMap::Import(const AssetsExporter& exporter) {
 }
 
 // ------------------------------------------------------------------------------------------------
-bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* sidedefs_data,
-                               u32 sidedefs_data_size, const u8* segs_data, u32 segs_data_size,
-                               const u8* subsectors_data, u32 subsectors_data_size,
-                               const u8* linedefs_data, u32 linedefs_data_size,
-                               const core::RenderAssets& render_assets) {
+bool GameMap::LoadFromDoomData(const u8* linedefs_data, u32 linedefs_data_size,
+                               const u8* sidedefs_data, u32 sidedefs_data_size,
+                               const u8* vertex_data, u32 vertex_data_size, const u8* sectors_data,
+                               u32 sectors_data_size, const core::RenderAssets& render_assets) {
     // Empty the game map.
     Clear();
 
@@ -551,6 +551,13 @@ bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, cons
         side_info->texture_info_middle.y_offset = sidedef.offset_y;
         side_info->qe_portal = {kInvalidIndex};
 
+        // Consider the sidedef passable if its middle texture is "AASTINKY" or "-".
+        bool is_passable = strncmp((const char*)sidedef.texture_name_middle, "AASTINKY", 8) == 0 ||
+                           strncmp((const char*)sidedef.texture_name_middle, "-", 8) == 0;
+        if (is_passable) {
+            side_info->flags |= core::kSideInfoFlag_PASSABLE;
+        }
+
         // If there is a sidedef on the other side, add that.
         constexpr u16 LINEDEF_FLAG_TWO_SIDED = 0x0004;
         if ((linedef.flags & LINEDEF_FLAG_TWO_SIDED) > 0) {
@@ -578,10 +585,35 @@ bool GameMap::LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, cons
             side_info->texture_info_middle.x_offset = sidedef.offset_x;
             side_info->texture_info_middle.y_offset = sidedef.offset_y;
             side_info->qe_portal = {kInvalidIndex};
+
+            if (is_passable) {
+                side_info->flags |= core::kSideInfoFlag_PASSABLE;
+            }
         }
     }
 
-    // TODO: Continue here and load sectors
+    // Load sectors
+    struct DoomSector {
+        i16 z_floor;
+        i16 z_ceil;
+        u8 texture_name_floor[8];
+        u8 texture_name_ceil[8];
+        i16 light_level;
+        i16 special_type;
+        i16 tag_number;
+    };
+    u32 n_sectors = sectors_data_size / sizeof(DoomSector);
+    u32 sectors_data_offset = 0;
+    sectors_.resize(n_sectors);
+    for (u32 i_sector = 0; i_sector < n_sectors; i_sector++) {
+        Sector& sector = sectors_[i_sector];
+        DoomSector doom_sector = *(DoomSector*)(sectors_data + sectors_data_offset);
+        sectors_data_offset += sizeof(DoomSector);
+
+        sector.flags = 0x0000;  // TODO
+        sector.z_floor = doom_sector.z_floor / kDoomUnitsPerWorldUnit;
+        sector.z_ceil = doom_sector.z_ceil / kDoomUnitsPerWorldUnit;
+    }
 
     // Segs and Subsectors
     // struct Seg {

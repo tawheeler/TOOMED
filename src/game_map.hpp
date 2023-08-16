@@ -49,6 +49,7 @@ struct SideInfo {
 };
 
 // All side infos refer to a sector to contain the corresponding floor/ceiling information.
+// TODO: Store light level, floor and ceiling texture.
 struct Sector {
     u16 flags;
     f32 z_floor;
@@ -111,10 +112,9 @@ class GameMap {
     bool Import(const core::AssetsExporter& exporter);
 
     // Load a game map from DOOM data.
-    bool LoadFromDoomData(const u8* vertex_data, u32 vertex_data_size, const u8* sidedefs_data,
-                          u32 sidedefs_data_size, const u8* segs_data, u32 segs_data_size,
-                          const u8* subsectors_data, u32 subsectors_data_size,
-                          const u8* linedefs_data, u32 linedefs_data_size,
+    bool LoadFromDoomData(const u8* linedefs_data, u32 linedefs_data_size, const u8* sidedefs_data,
+                          u32 sidedefs_data_size, const u8* vertex_data, u32 vertex_data_size,
+                          const u8* sectors_data, u32 sectors_data_size,
                           const core::RenderAssets& render_assets);
 
     // Finds a vertex (as a primal quarter edge) near the given position, if there is one, using the

@@ -949,7 +949,7 @@ QuarterEdgeIndex DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeInd
 
         result = EnforceEdgeInternal(qe_b, i_vertex_a);
         progress |= result.progress;
-        qe_ab = result.qe_ab;
+        qe_ab = Sym(result.qe_ab);
         success |= IsValid(qe_ab);
     }
 
