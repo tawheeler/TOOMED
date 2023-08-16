@@ -284,7 +284,7 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
         camera_state->z = camera_state->height + sector->z_floor;
     } else {
         // TODO: Remove.
-        camera_state->z = camera_state->height;
+        // camera_state->z = camera_state->height;
     }
 
     // Update the camera's rotational heading
@@ -402,6 +402,9 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
     f32 y_screen = y_upper;
     while (y_screen > y_lo) {
         u32 column_offset = patch.column_offsets[x_patch];
+        if (patch.post_data[column_offset] == 0xFF) {
+            break;
+        }
         while (patch.post_data[column_offset] != 0xFF) {
             u8 y_patch_delta = patch.post_data[column_offset];
             column_offset++;
@@ -903,7 +906,8 @@ int main() {
 
     CameraState player_cam = {};
     // player_cam.pos = {5.0, 5.0};
-    player_cam.pos = {-10.25, -50.5};
+    // player_cam.pos = {-10.25, -50.5};
+    player_cam.pos = {-5.1, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 0.4f;
