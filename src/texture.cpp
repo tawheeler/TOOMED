@@ -179,6 +179,12 @@ std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& i
             // Get the patch name (max 8 chars)
             std::string subpatch_name((char*)(pnames_data + 4 + 8 * subpatch.i_patch), 8);
 
+            // Convert to uppercase. For some reason these entries are sometimes lowercase,
+            // but they will be uppercase in the WAD.
+            for (char& c : subpatch_name) {
+                c = std::toupper(c);
+            }
+
             auto patch_opt = importer->FindEntryData(subpatch_name);
             if (!patch_opt) {
                 continue;
