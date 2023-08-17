@@ -72,4 +72,12 @@ const std::string kAssetEntryPatches = "patches";
 core::AssetsExporterEntry ExportPatches(const std::vector<Patch>& patches);
 bool ImportPatches(std::vector<doom::Patch>* patches, const core::AssetsExporter& exporter);
 
+// A flat in DOOM is a 64x64 set of pixel indices.
+struct Flat {
+    std::string name;
+    u8 data[4096];
+};
+
+std::vector<Flat> ParseDoomFlats(const std::unique_ptr<core::WadImporter>& importer);
+
 }  // namespace doom

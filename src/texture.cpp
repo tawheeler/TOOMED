@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <sstream>
 
 namespace doom {
@@ -187,7 +188,7 @@ std::vector<Patch> ParseDoomTextures(const std::unique_ptr<core::WadImporter>& i
 
             auto patch_opt = importer->FindEntryData(subpatch_name);
             if (!patch_opt) {
-                continue;
+                continue;  // should never happen
             }
 
             // Render the patch
@@ -328,6 +329,69 @@ bool ImportPatches(std::vector<doom::Patch>* patches, const core::AssetsExporter
     }
 
     return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+std::vector<Flat> ParseDoomFlats(const std::unique_ptr<core::WadImporter>& importer) {
+    std::vector<Flat> flats;
+
+    // maps the name (reinterpreted from u8[8]) to its index in flats
+    std::map<u64, int> loaded_flats;
+
+    // Get all of the texture names via the sectors.
+    struct DoomSector {
+        i16 z_floor;
+        i16 z_ceil;
+        u8 texture_name_floor[8];
+        u8 texture_name_ceil[8];
+        i16 light_level;
+        i16 special_type;
+        i16 tag_number;
+    };
+
+    std::optional<int> sectors_lump_index = importer->FindEntryDataIndex("SECTORS");
+    while (sectors_lump_index) {
+        const auto [sectors_data, sectors_data_size] =
+            *(importer->GetEntryData(*sectors_lump_index));
+        u32 n_sectors = sectors_data_size / sizeof(DoomSector);
+
+        u32 sectors_data_offset = 0;
+        for (u32 i_sector = 0; i_sector < n_sectors; i_sector++) {
+            DoomSector doom_sector = *(DoomSector*)(sectors_data + sectors_data_offset);
+            sectors_data_offset += sizeof(DoomSector);
+
+            // Load the floor and ceiling flats if we have not already.
+            u64 key_floor;
+            u64 key_ceil;
+            memcpy(&key_floor, doom_sector.texture_name_floor, sizeof(u64));
+            memcpy(&key_ceil, doom_sector.texture_name_ceil, sizeof(u64));
+
+            for (u64 key : {key_floor, key_ceil}) {
+                if (loaded_flats.find(key) != loaded_flats.end()) {
+                    continue;  // We already have the flat.
+                }
+
+                Flat flat;
+                flat.name = std::string((char*)(&key), 8);
+
+                std::optional<int> flat_lump_index = importer->FindEntryDataIndex(flat.name);
+                if (flat_lump_index) {
+                    const u8* flat_data = (importer->GetEntryData(*flat_lump_index))->first;
+                    memcpy(flat.data, flat_data, sizeof(flat.data));
+                } else {
+                    // Failed to find the flat
+                    memset(flat.data, 0xFA, sizeof(flat.data));  // magenta
+                }
+
+                loaded_flats[key] = (int)(flats.size());
+                flats.push_back(flat);
+            }
+        }
+
+        sectors_lump_index = importer->FindEntryDataIndex("SECTORS", (*sectors_lump_index) + 1);
+    }
+
+    return flats;
 }
 
 }  // namespace doom

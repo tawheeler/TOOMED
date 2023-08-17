@@ -26,7 +26,7 @@ class WadImporter {
     // of where that entry's data begins.
     std::optional<const u8*> FindEntryData(const std::string& entry_name) const;
 
-    std::optional<int> FindEntryDataIndex(const std::string& entry_name) const;
+    std::optional<int> FindEntryDataIndex(const std::string& entry_name, int index_start = 0) const;
 
     std::optional<std::pair<const u8*, u32>> GetEntryData(int index) const;
 

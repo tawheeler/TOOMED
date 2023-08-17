@@ -65,8 +65,9 @@ std::optional<const u8*> WadImporter::FindEntryData(const std::string& entry_nam
 }
 
 // ------------------------------------------------------------------------------------------------
-std::optional<int> WadImporter::FindEntryDataIndex(const std::string& entry_name) const {
-    for (int i = 0; i < (int)n_entries_; i++) {
+std::optional<int> WadImporter::FindEntryDataIndex(const std::string& entry_name,
+                                                   int index_start) const {
+    for (int i = index_start; i < (int)n_entries_; i++) {
         WadDirectoryEntry* entry = entries_ + i;
         if (strncmp(entry->name, entry_name.c_str(), 8) == 0) {
             return i;
