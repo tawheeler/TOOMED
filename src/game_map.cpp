@@ -50,20 +50,10 @@ SideInfo* GameMap::GetEditableSideInfo(QuarterEdgeIndex qe_primal) {
 }
 
 // ------------------------------------------------------------------------------------------------
-const Sector* GameMap::GetSector(u16 sector_index) const {
-    if (sectors_.size() <= sector_index) {
-        return nullptr;
-    }
-    return &(sectors_[sector_index]);
-}
+const Sector* GameMap::GetSector(u16 sector_index) const { return &(sectors_[sector_index]); }
 
 // ------------------------------------------------------------------------------------------------
-Sector* GameMap::GetEditableSector(u16 sector_index) {
-    if (sectors_.size() <= sector_index) {
-        return nullptr;
-    }
-    return &(sectors_[sector_index]);
-}
+Sector* GameMap::GetEditableSector(u16 sector_index) { return &(sectors_[sector_index]); }
 
 // ------------------------------------------------------------------------------------------------
 VertexIndex GameMap::AddVertex(const common::Vec2f& pos) {

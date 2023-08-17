@@ -4,12 +4,12 @@
 
 EXE = TOOMED
 IMGUI_DIR = src/imgui
-SOURCES = src/toomed.cpp src/assets_exporter.cpp src/assets_importer.cpp src/delaunay_mesh.cpp src/game_map.cpp src/geometry_utils.cpp src/input.cpp src/math_utils.cpp src/palette.cpp src/render_assets.cpp src/texture.cpp src/wad_importer.cpp
+SOURCES = src/toomed.cpp src/assets_exporter.cpp src/assets_importer.cpp src/delaunay_mesh.cpp src/game_map.cpp src/geometry_utils.cpp src/input.cpp src/math_utils.cpp src/palette.cpp src/platform_metrics.cpp src/profiler.cpp src/render_assets.cpp src/texture.cpp src/wad_importer.cpp
 SOURCES += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp
 SOURCES += $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp $(IMGUI_DIR)/backends/imgui_impl_sdlrenderer2.cpp
 OBJS = $(addsuffix .o, $(basename $(notdir $(SOURCES))))
 OBJS = $(addprefix $(OBJDIR)/, $(addsuffix .o, $(basename $(notdir $(SOURCES)))))
-OBJS = obj/toomed.o obj/assets_exporter.o obj/assets_importer.o obj/delaunay_mesh.o obj/game_map.o obj/geometry_utils.o obj/input.o obj/math_utils.o obj/palette.o obj/render_assets.o obj/texture.o obj/wad_importer.o
+OBJS = obj/toomed.o obj/assets_exporter.o obj/assets_importer.o obj/delaunay_mesh.o obj/game_map.o obj/geometry_utils.o obj/input.o obj/math_utils.o obj/palette.o  obj/platform_metrics.o obj/profiler.o obj/render_assets.o obj/texture.o obj/wad_importer.o
 OBJS += obj/imgui/imgui.o obj/imgui/imgui_demo.o obj/imgui/imgui_draw.o obj/imgui/imgui_tables.o obj/imgui/imgui_widgets.o
 OBJS += obj/imgui/backends/imgui_impl_sdl2.o obj/imgui/backends/imgui_impl_sdlrenderer2.o
 

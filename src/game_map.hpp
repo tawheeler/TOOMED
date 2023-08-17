@@ -73,7 +73,7 @@ class GameMap {
     const SideInfo* GetSideInfo(QuarterEdgeIndex qe_primal) const;
     SideInfo* GetEditableSideInfo(QuarterEdgeIndex qe_primal);
 
-    // Returns a pointer to the corresponding sector, or nullptr if it does not exist.
+    // Returns a pointer to the corresponding sector.
     const Sector* GetSector(u16 sector_index) const;
     Sector* GetEditableSector(u16 sector_index);
 

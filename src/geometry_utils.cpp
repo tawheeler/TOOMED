@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "profiler.cpp"
+
 namespace common {
 
 // ------------------------------------------------------------------------------------------------
@@ -103,6 +105,7 @@ Vec2f Rotr(const Vec2f& a) { return Vec2f(-a.y, a.x); }
 
 // ------------------------------------------------------------------------------------------------
 float GetRightHandedness(const Vec2f& a, const Vec2f& b, const Vec2f& c) {
+    TimeFunction;
     return Det(a.x, a.y, 1.0f, b.x, b.y, 1.0f, c.x, c.y, 1.0f);
 }
 

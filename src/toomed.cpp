@@ -19,6 +19,8 @@
 #include "input.hpp"
 #include "math_utils.hpp"
 #include "palette.hpp"
+#include "platform_metrics.cpp"
+#include "profiler.cpp"
 #include "render_assets.hpp"
 #include "texture.hpp"
 #include "typedefs.hpp"
@@ -93,6 +95,8 @@ struct CameraState {
 
 void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_state,
                 const core::GameMap& game_map, f32 dt) {
+    TimeFunction;
+
     // ------------------------------------------------------------
     // Process Input
     common::Vec2f input_dir = {0.0,
@@ -367,6 +371,7 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
                        f32 x_along_texture, u32 x_base_offset, u32 y_base_offset, f32 column_height,
                        const doom::Patch& patch, const core::Palette& palette,
                        const core::Colormap& colormap, const RenderData& render_data) {
+    TimeFunction;
     // TODO: for now, ignore y_base_offset.
 
     // The index into the patch of the column that we want to draw.
@@ -452,236 +457,470 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
     }
 }
 
+// //
+// ------------------------------------------------------------------------------------------------
+// void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
+//                       const CameraState& camera, const std::vector<doom::Patch>& patches,
+//                       const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
+//                       const RenderData& render_data, const common::Vec2f& pos,
+//                       const common::Vec2f& dir, core::QuarterEdgeIndex qe_dual, int x, int y_lo,
+//                       int y_hi, f32 cam_len_times_screen_size_y_over_fov_y, u32 n_steps) {
+//     TimeFunction;
+
+//     if (n_steps > render_data.max_render_steps) {
+//         return;  // limit the max depth
+//     }
+
+//     if (y_lo >= y_hi) {
+//         return;  // We've rendered every pixel
+//     }
+
+//     // Grab the enclosing triangle.
+//     const core::DelaunayMesh mesh = game_map.GetMesh();
+//     auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
+
+//     common::Vec2f a = mesh.GetVertex(qe_ab);
+//     common::Vec2f b = mesh.GetVertex(qe_bc);
+//     common::Vec2f c = mesh.GetVertex(qe_ca);
+
+//     // Project our ray out far enough that it would exit our mesh
+//     f32 projection_distance = 100.0;  // Ridiculously large
+//     common::Vec2f pos_next_delta = projection_distance * dir;
+//     common::Vec2f pos_next = pos + pos_next_delta;
+
+//     f32 min_interp = INFINITY;
+//     core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
+
+//     // The edge vector of the face that we last crossed
+//     common::Vec2f v_face = {0.0, 0.0};
+
+//     // See if we cross any of the 3 faces for the triangle we are in,
+//     // and cross the first segment.
+//     const f32 eps = 1e-4;
+//     {
+//         ProfileBlock sdl_poll_events("RenderWallsInner_EdgeChecks", __COUNTER__ + 1);
+
+//         if (common::GetRightHandedness(a, b, pos_next) < -eps) {
+//             // We would cross AB
+//             common::Vec2f v = b - a;
+//             common::Vec2f w = pos - a;
+//             float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+//             if (interp_ab < min_interp) {
+//                 min_interp = interp_ab;
+//                 qe_side = qe_ab;
+//                 v_face = v;
+//             }
+//         }
+//         if (common::GetRightHandedness(b, c, pos_next) < -eps) {
+//             // We would cross BC
+//             common::Vec2f v = c - b;
+//             common::Vec2f w = pos - b;
+//             float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+//             if (interp_bc < min_interp) {
+//                 min_interp = interp_bc;
+//                 qe_side = qe_bc;
+//                 v_face = v;
+//             }
+//         }
+//         if (common::GetRightHandedness(c, a, pos_next) < -eps) {
+//             // We would cross CA
+//             common::Vec2f v = a - c;
+//             common::Vec2f w = pos - c;
+//             float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+//             if (interp_ca < min_interp) {
+//                 min_interp = interp_ca;
+//                 qe_side = qe_ca;
+//                 v_face = v;
+//             }
+//         }
+//     }
+
+//     if (core::IsValid(qe_side)) {
+//         // Move to the face
+//         pos_next = pos + min_interp * pos_next_delta;
+//         qe_dual = mesh.Rot(qe_side);
+
+//         // Accumulate distance traveled
+//         wall_raycast_radius[x] += min_interp * projection_distance;
+
+//         const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
+//         if (side_info != nullptr) {
+//             ProfileBlock sdl_poll_events("RenderWallsInner_WithValidSideInfo", __COUNTER__ + 1);
+
+//             const f32 ray_len = std::max(wall_raycast_radius[x], 0.01f);
+//             const f32 gamma = cam_len_times_screen_size_y_over_fov_y / ray_len;
+
+//             const core::Sector* sector = game_map.GetSector(side_info->sector_id);
+//             f32 z_ceil = sector->z_ceil;
+//             f32 z_upper = sector->z_ceil;
+//             f32 z_lower = sector->z_floor;
+//             f32 z_floor = sector->z_floor;
+
+//             // Get the height on the other side, if it is passable.
+//             const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
+//             bool is_portal = core::IsValid(side_info->qe_portal);
+//             if (is_passable) {
+//                 core::QuarterEdgeIndex qe_sym =
+//                     is_portal ? side_info->qe_portal : mesh.Sym(qe_side);
+//                 const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
+
+//                 if (side_info_sym != nullptr) {
+//                     const core::Sector* sector_sym =
+//                     game_map.GetSector(side_info_sym->sector_id); z_lower = sector_sym->z_floor;
+//                     z_upper = sector_sym->z_ceil;
+//                 } else {
+//                     std::cout << "Unexpected nullptr qe_sym!" << std::endl;
+//                 }
+//             }
+
+//             // TODO: If a portal, the z on the other side is different
+//             f32 half_screen_size_y = render_data.half_screen_size_y;
+//             int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera.z));
+//             int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera.z));
+//             int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera.z));
+//             int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
+
+//             // Calculate where along the segment we intersected
+//             f32 v_face_len = common::Norm(v_face);
+//             f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
+
+//             // Determine the light level
+//             u8 light_level_sector = 0;  // base light level (TODO: Move to sector data.)
+//             u8 colormap_index =
+//                 light_level_sector + (u8)(render_data.darkness_per_world_dist * ray_len);
+
+//             // Make faces that run closer to north-south brighter, and faces running closer
+//             // to east-west darker. (cos > 0.7071). We're using the law of cosines.
+//             bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
+//             if (face_is_closer_to_east_west) {
+//                 colormap_index += 1;  // darker
+//             } else if (colormap_index > 0) {
+//                 colormap_index -= 1;  // lighter
+//             }
+
+//             u8 max_colormap_index = 32 - 1;
+//             colormap_index = std::min(colormap_index, max_colormap_index);
+//             const core::Colormap& colormap = colormaps[colormap_index];
+
+//             // Render the ceiling above the upper texture
+//             y_ceil = std::max(y_ceil, y_lo + 1);
+//             while (y_hi > y_ceil) {
+//                 y_hi--;
+//                 pixels[(y_hi * render_data.screen_size_x) + x] = render_data.color_ceil;
+//             }
+
+//             // Render the upper texture
+//             if (y_hi > y_upper) {
+//                 f32 column_height = z_ceil - z_upper;
+//                 RenderPatchColumn(pixels, x, y_upper, y_ceil, std::max(y_upper, y_lo), y_hi,
+//                                   x_along_texture, side_info->texture_info_upper.x_offset,
+//                                   side_info->texture_info_upper.y_offset, column_height,
+//                                   patches[side_info->texture_info_upper.texture_id], palette,
+//                                   colormap, render_data);
+//                 y_hi = y_upper;
+//             }
+
+//             // Render the floor below the lower texture
+//             y_floor = std::min(y_floor, y_hi - 1);
+//             while (y_floor > y_lo) {
+//                 y_lo++;
+//                 pixels[(y_lo * render_data.screen_size_x) + x] = render_data.color_floor;
+//             }
+
+//             // Render the lower texture
+//             if (y_lower > y_lo) {
+//                 f32 column_height = z_lower - z_floor;
+//                 RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, std::min(y_lower, y_hi),
+//                                   x_along_texture, side_info->texture_info_lower.x_offset,
+//                                   side_info->texture_info_lower.y_offset, column_height,
+//                                   patches[side_info->texture_info_lower.texture_id], palette,
+//                                   colormap, render_data);
+//                 y_lo = y_lower;
+//             }
+
+//             // Recurse if the side is passable.
+//             if (is_passable) {
+//                 common::Vec2f dir_next = dir;
+
+//                 if (is_portal) {
+//                     qe_dual = mesh.Tor(side_info->qe_portal);
+
+//                     // do the transform on pos_next and dir
+
+//                     // The vector along the new face is
+//                     common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
+//                     common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
+//                     common::Vec2f dc = d - c;
+//                     f32 dc_len = common::Norm(dc);
+
+//                     // Our new position is:
+//                     pos_next = c + (x_along_texture / dc_len) * dc;
+
+//                     // A -> B is v_face (and v_face_len)
+//                     // P -> Q (our ray) is dir
+//                     f32 cos_theta = common::Dot(v_face, dir) / v_face_len;
+//                     f32 sin_theta = abs(common::Cross(v_face, dir) / v_face_len);
+
+//                     // Now to get the new direction, we need to rotate out of the new face.
+//                     dir_next = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
+//                                 (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+//                 }
+
+//                 RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
+//                                  colormaps, render_data, pos_next, dir_next, qe_dual, x, y_lo,
+//                                  y_hi, cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
+//             } else {
+//                 // The side info has a solid wall.
+//                 f32 column_height = z_upper - z_lower;
+//                 RenderPatchColumn(pixels, x, y_lower, y_upper, y_lo, y_hi, x_along_texture,
+//                                   side_info->texture_info_middle.x_offset,
+//                                   side_info->texture_info_middle.y_offset, column_height,
+//                                   patches[side_info->texture_info_middle.texture_id], palette,
+//                                   colormap, render_data);
+//             }
+//         } else {
+//             // Failed to get side_info.
+//             // If this is a normal edge, recurse as long as it is not the boundary edge
+//             if (!mesh.IsBoundaryEdge(qe_side)) {
+//                 RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
+//                                  colormaps, render_data, pos_next, dir, qe_dual, x, y_lo, y_hi,
+//                                  cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
+//             }
+//         }
+//     }
+// }
+
 // ------------------------------------------------------------------------------------------------
 void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
                       const CameraState& camera, const std::vector<doom::Patch>& patches,
                       const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
-                      const RenderData& render_data, const common::Vec2f& pos,
-                      const common::Vec2f& dir, core::QuarterEdgeIndex qe_dual, int x, int y_lo,
-                      int y_hi, f32 cam_len_times_screen_size_y_over_fov_y, u32 n_steps) {
-    if (n_steps > render_data.max_render_steps) {
-        return;  // limit the max depth
-    }
+                      const RenderData& render_data, common::Vec2f pos, common::Vec2f dir,
+                      core::QuarterEdgeIndex qe_dual, const int x, int y_lo, int y_hi,
+                      const f32 cam_len_times_screen_size_y_over_fov_y) {
+    TimeFunction;
 
-    if (y_lo >= y_hi) {
-        return;  // We've rendered every pixel
-    }
-
-    // Grab the enclosing triangle.
     const core::DelaunayMesh mesh = game_map.GetMesh();
-    auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
 
-    common::Vec2f a = mesh.GetVertex(qe_ab);
-    common::Vec2f b = mesh.GetVertex(qe_bc);
-    common::Vec2f c = mesh.GetVertex(qe_ca);
+    constexpr f32 kProjectionDistance = 100.0;  // Ridiculously large
 
-    // Project our ray out far enough that it would exit our mesh
-    f32 projection_distance = 100.0;  // Ridiculously large
-    common::Vec2f pos_next_delta = projection_distance * dir;
-    common::Vec2f pos_next = pos + pos_next_delta;
+    bool recurse = true;
+    u32 n_steps = 0;
+    while (recurse && n_steps <= render_data.max_render_steps) {
+        recurse = false;
+        n_steps += 1;
 
-    f32 min_interp = INFINITY;
-    core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
-
-    // The edge vector of the face that we last crossed
-    common::Vec2f v_face = {0.0, 0.0};
-
-    // See if we cross any of the 3 faces for the triangle we are in,
-    // and cross the first segment.
-    const f32 eps = 1e-4;
-    if (common::GetRightHandedness(a, b, pos_next) < -eps) {
-        // We would cross AB
-        common::Vec2f v = b - a;
-        common::Vec2f w = pos - a;
-        float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
-        if (interp_ab < min_interp) {
-            min_interp = interp_ab;
-            qe_side = qe_ab;
-            v_face = v;
+        if (y_lo >= y_hi) {
+            return;  // We've rendered every pixel
         }
-    }
-    if (common::GetRightHandedness(b, c, pos_next) < -eps) {
-        // We would cross BC
-        common::Vec2f v = c - b;
-        common::Vec2f w = pos - b;
-        float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
-        if (interp_bc < min_interp) {
-            min_interp = interp_bc;
-            qe_side = qe_bc;
-            v_face = v;
-        }
-    }
-    if (common::GetRightHandedness(c, a, pos_next) < -eps) {
-        // We would cross CA
-        common::Vec2f v = a - c;
-        common::Vec2f w = pos - c;
-        float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
-        if (interp_ca < min_interp) {
-            min_interp = interp_ca;
-            qe_side = qe_ca;
-            v_face = v;
-        }
-    }
 
-    if (core::IsValid(qe_side)) {
-        // Move to the face
-        pos_next = pos + min_interp * pos_next_delta;
-        qe_dual = mesh.Rot(qe_side);
+        // Grab the enclosing triangle.
+        auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
 
-        // Accumulate distance traveled
-        wall_raycast_radius[x] += min_interp * projection_distance;
+        common::Vec2f a = mesh.GetVertex(qe_ab);
+        common::Vec2f b = mesh.GetVertex(qe_bc);
+        common::Vec2f c = mesh.GetVertex(qe_ca);
 
-        const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
-        if (side_info != nullptr) {
-            const f32 ray_len = std::max(wall_raycast_radius[x], 0.01f);
-            const f32 gamma = cam_len_times_screen_size_y_over_fov_y / ray_len;
+        // Project our ray out far enough that it would exit our mesh
+        common::Vec2f pos_next_delta = kProjectionDistance * dir;
+        common::Vec2f pos_next = pos + pos_next_delta;
 
-            f32 z_ceil = 1.0;
-            f32 z_upper = 0.8;
-            f32 z_lower = 0.2;
-            f32 z_floor = 0.0;
+        f32 min_interp = INFINITY;
+        core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
 
-            const core::Sector* sector = game_map.GetSector(side_info->sector_id);
-            if (sector != nullptr) {
-                z_ceil = sector->z_ceil;
-                z_upper = sector->z_ceil;
-                z_lower = sector->z_floor;
-                z_floor = sector->z_floor;
+        // The edge vector of the face that we last crossed
+        common::Vec2f v_face = {0.0, 0.0};
+
+        // See if we cross any of the 3 faces for the triangle we are in,
+        // and cross the first segment.
+        const f32 eps = 1e-4;
+        {
+            ProfileBlock sdl_poll_events("RenderWallsInner_EdgeChecks", __COUNTER__ + 1);
+
+            if (common::GetRightHandedness(a, b, pos_next) < -eps) {
+                // We would cross AB
+                common::Vec2f v = b - a;
+                common::Vec2f w = pos - a;
+                float interp_ab = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+                if (interp_ab < min_interp) {
+                    min_interp = interp_ab;
+                    qe_side = qe_ab;
+                    v_face = v;
+                }
             }
+            if (common::GetRightHandedness(b, c, pos_next) < -eps) {
+                // We would cross BC
+                common::Vec2f v = c - b;
+                common::Vec2f w = pos - b;
+                float interp_bc = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+                if (interp_bc < min_interp) {
+                    min_interp = interp_bc;
+                    qe_side = qe_bc;
+                    v_face = v;
+                }
+            }
+            if (common::GetRightHandedness(c, a, pos_next) < -eps) {
+                // We would cross CA
+                common::Vec2f v = a - c;
+                common::Vec2f w = pos - c;
+                float interp_ca = common::Cross(v, w) / common::Cross(pos_next_delta, v);
+                if (interp_ca < min_interp) {
+                    min_interp = interp_ca;
+                    qe_side = qe_ca;
+                    v_face = v;
+                }
+            }
+        }
 
-            // Get the height on the other side, if it is passable.
-            const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
-            bool is_portal = core::IsValid(side_info->qe_portal);
-            if (is_passable) {
-                core::QuarterEdgeIndex qe_sym =
-                    is_portal ? side_info->qe_portal : mesh.Sym(qe_side);
-                const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
+        if (core::IsValid(qe_side)) {
+            // Move to the face
+            pos_next = pos + min_interp * pos_next_delta;
+            qe_dual = mesh.Rot(qe_side);
 
-                if (side_info_sym != nullptr) {
-                    const core::Sector* sector_sym = game_map.GetSector(side_info_sym->sector_id);
-                    if (sector_sym != nullptr) {
+            // Accumulate distance traveled
+            wall_raycast_radius[x] += min_interp * kProjectionDistance;
+
+            const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
+            if (side_info != nullptr) {
+                ProfileBlock sdl_poll_events("RenderWallsInner_WithValidSideInfo", __COUNTER__ + 1);
+
+                const f32 ray_len = std::max(wall_raycast_radius[x], 0.01f);
+                const f32 gamma = cam_len_times_screen_size_y_over_fov_y / ray_len;
+
+                const core::Sector* sector = game_map.GetSector(side_info->sector_id);
+                f32 z_ceil = sector->z_ceil;
+                f32 z_upper = sector->z_ceil;
+                f32 z_lower = sector->z_floor;
+                f32 z_floor = sector->z_floor;
+
+                // Get the height on the other side, if it is passable.
+                const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
+                bool is_portal = core::IsValid(side_info->qe_portal);
+                if (is_passable) {
+                    core::QuarterEdgeIndex qe_sym =
+                        is_portal ? side_info->qe_portal : mesh.Sym(qe_side);
+                    const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
+
+                    if (side_info_sym != nullptr) {
+                        const core::Sector* sector_sym =
+                            game_map.GetSector(side_info_sym->sector_id);
                         z_lower = sector_sym->z_floor;
                         z_upper = sector_sym->z_ceil;
                     } else {
-                        std::cout << "Unexpected nullptr side_info_sym!" << std::endl;
+                        std::cout << "Unexpected nullptr qe_sym!" << std::endl;
                     }
+                }
+
+                // TODO: If a portal, the z on the other side is different
+                f32 half_screen_size_y = render_data.half_screen_size_y;
+                int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera.z));
+                int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera.z));
+                int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera.z));
+                int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
+
+                // Calculate where along the segment we intersected
+                f32 v_face_len = common::Norm(v_face);
+                f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
+
+                // Determine the light level
+                u8 light_level_sector = 0;  // base light level (TODO: Move to sector data.)
+                u8 colormap_index =
+                    light_level_sector + (u8)(render_data.darkness_per_world_dist * ray_len);
+
+                // Make faces that run closer to north-south brighter, and faces running closer
+                // to east-west darker. (cos > 0.7071). We're using the law of cosines.
+                bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
+                if (face_is_closer_to_east_west) {
+                    colormap_index += 1;  // darker
+                } else if (colormap_index > 0) {
+                    colormap_index -= 1;  // lighter
+                }
+
+                u8 max_colormap_index = 32 - 1;
+                colormap_index = std::min(colormap_index, max_colormap_index);
+                const core::Colormap& colormap = colormaps[colormap_index];
+
+                // Render the ceiling above the upper texture
+                y_ceil = std::max(y_ceil, y_lo + 1);
+                while (y_hi > y_ceil) {
+                    y_hi--;
+                    pixels[(y_hi * render_data.screen_size_x) + x] = render_data.color_ceil;
+                }
+
+                // Render the upper texture
+                if (y_hi > y_upper) {
+                    f32 column_height = z_ceil - z_upper;
+                    RenderPatchColumn(pixels, x, y_upper, y_ceil, std::max(y_upper, y_lo), y_hi,
+                                      x_along_texture, side_info->texture_info_upper.x_offset,
+                                      side_info->texture_info_upper.y_offset, column_height,
+                                      patches[side_info->texture_info_upper.texture_id], palette,
+                                      colormap, render_data);
+                    y_hi = y_upper;
+                }
+
+                // Render the floor below the lower texture
+                y_floor = std::min(y_floor, y_hi - 1);
+                while (y_floor > y_lo) {
+                    y_lo++;
+                    pixels[(y_lo * render_data.screen_size_x) + x] = render_data.color_floor;
+                }
+
+                // Render the lower texture
+                if (y_lower > y_lo) {
+                    f32 column_height = z_lower - z_floor;
+                    RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, std::min(y_lower, y_hi),
+                                      x_along_texture, side_info->texture_info_lower.x_offset,
+                                      side_info->texture_info_lower.y_offset, column_height,
+                                      patches[side_info->texture_info_lower.texture_id], palette,
+                                      colormap, render_data);
+                    y_lo = y_lower;
+                }
+
+                // Recurse if the side is passable.
+                if (is_passable) {
+                    common::Vec2f dir_next = dir;
+
+                    if (is_portal) {
+                        qe_dual = mesh.Tor(side_info->qe_portal);
+
+                        // do the transform on pos_next and dir
+
+                        // The vector along the new face is
+                        common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
+                        common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
+                        common::Vec2f dc = d - c;
+                        f32 dc_len = common::Norm(dc);
+
+                        // Our new position is:
+                        pos_next = c + (x_along_texture / dc_len) * dc;
+
+                        // A -> B is v_face (and v_face_len)
+                        // P -> Q (our ray) is dir
+                        f32 cos_theta = common::Dot(v_face, dir) / v_face_len;
+                        f32 sin_theta = abs(common::Cross(v_face, dir) / v_face_len);
+
+                        // Now to get the new direction, we need to rotate out of the new face.
+                        dir_next = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
+                                    (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+                    }
+
+                    // Recurse.
+                    recurse = true;
+                    dir = dir_next;
+                    pos = pos_next;
                 } else {
-                    std::cout << "Unexpected nullptr qe_sym!" << std::endl;
+                    // The side info has a solid wall.
+                    f32 column_height = z_upper - z_lower;
+                    RenderPatchColumn(pixels, x, y_lower, y_upper, y_lo, y_hi, x_along_texture,
+                                      side_info->texture_info_middle.x_offset,
+                                      side_info->texture_info_middle.y_offset, column_height,
+                                      patches[side_info->texture_info_middle.texture_id], palette,
+                                      colormap, render_data);
                 }
-            }
-
-            // TODO: If a portal, the z on the other side is different
-            f32 half_screen_size_y = render_data.half_screen_size_y;
-            int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera.z));
-            int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera.z));
-            int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera.z));
-            int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
-
-            // Calculate where along the segment we intersected
-            f32 v_face_len = common::Norm(v_face);
-            f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
-
-            // Determine the light level
-            u8 light_level_sector = 0;  // base light level (TODO: Move to sector data.)
-            u8 colormap_index =
-                light_level_sector + (u8)(render_data.darkness_per_world_dist * ray_len);
-
-            // Make faces that run closer to north-south brighter, and faces running closer
-            // to east-west darker. (cos > 0.7071). We're using the law of cosines.
-            bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
-            if (face_is_closer_to_east_west) {
-                colormap_index += 1;  // darker
-            } else if (colormap_index > 0) {
-                colormap_index -= 1;  // lighter
-            }
-
-            u8 max_colormap_index = 32 - 1;
-            colormap_index = std::min(colormap_index, max_colormap_index);
-            const core::Colormap& colormap = colormaps[colormap_index];
-
-            // Render the ceiling above the upper texture
-            y_ceil = std::max(y_ceil, y_lo + 1);
-            while (y_hi > y_ceil) {
-                y_hi--;
-                pixels[(y_hi * render_data.screen_size_x) + x] = render_data.color_ceil;
-            }
-
-            // Render the upper texture
-            if (y_hi > y_upper) {
-                f32 column_height = z_ceil - z_upper;
-                RenderPatchColumn(pixels, x, y_upper, y_ceil, std::max(y_upper, y_lo), y_hi,
-                                  x_along_texture, side_info->texture_info_upper.x_offset,
-                                  side_info->texture_info_upper.y_offset, column_height,
-                                  patches[side_info->texture_info_upper.texture_id], palette,
-                                  colormap, render_data);
-                y_hi = y_upper;
-            }
-
-            // Render the floor below the lower texture
-            y_floor = std::min(y_floor, y_hi - 1);
-            while (y_floor > y_lo) {
-                y_lo++;
-                pixels[(y_lo * render_data.screen_size_x) + x] = render_data.color_floor;
-            }
-
-            // Render the lower texture
-            if (y_lower > y_lo) {
-                f32 column_height = z_lower - z_floor;
-                RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, std::min(y_lower, y_hi),
-                                  x_along_texture, side_info->texture_info_lower.x_offset,
-                                  side_info->texture_info_lower.y_offset, column_height,
-                                  patches[side_info->texture_info_lower.texture_id], palette,
-                                  colormap, render_data);
-                y_lo = y_lower;
-            }
-
-            // Recurse if the side is passable.
-            if (is_passable) {
-                common::Vec2f dir_next = dir;
-
-                if (is_portal) {
-                    qe_dual = mesh.Tor(side_info->qe_portal);
-
-                    // do the transform on pos_next and dir
-
-                    // The vector along the new face is
-                    common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
-                    common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
-                    common::Vec2f dc = d - c;
-                    f32 dc_len = common::Norm(dc);
-
-                    // Our new position is:
-                    pos_next = c + (x_along_texture / dc_len) * dc;
-
-                    // A -> B is v_face (and v_face_len)
-                    // P -> Q (our ray) is dir
-                    f32 cos_theta = common::Dot(v_face, dir) / v_face_len;
-                    f32 sin_theta = abs(common::Cross(v_face, dir) / v_face_len);
-
-                    // Now to get the new direction, we need to rotate out of the new face.
-                    dir_next = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
-                                (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
-                }
-
-                RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
-                                 colormaps, render_data, pos_next, dir_next, qe_dual, x, y_lo, y_hi,
-                                 cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
             } else {
-                // The side info has a solid wall.
-                f32 column_height = z_upper - z_lower;
-                RenderPatchColumn(pixels, x, y_lower, y_upper, y_lo, y_hi, x_along_texture,
-                                  side_info->texture_info_middle.x_offset,
-                                  side_info->texture_info_middle.y_offset, column_height,
-                                  patches[side_info->texture_info_middle.texture_id], palette,
-                                  colormap, render_data);
-            }
-        } else {
-            // Failed to get side_info.
-            // If this is a normal edge, recurse as long as it is not the boundary edge
-            if (!mesh.IsBoundaryEdge(qe_side)) {
-                RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette,
-                                 colormaps, render_data, pos_next, dir, qe_dual, x, y_lo, y_hi,
-                                 cam_len_times_screen_size_y_over_fov_y, n_steps + 1);
+                // Failed to get side_info.
+                // If this is a normal edge, recurse as long as it is not the boundary edge
+                recurse = !mesh.IsBoundaryEdge(qe_side);
+                pos = pos_next;
             }
         }
     }
@@ -691,6 +930,8 @@ void RenderWallsInner(u32* pixels, f32* wall_raycast_radius, const core::GameMap
 void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
                  const CameraState& camera, const core::RenderAssets& render_assets,
                  const RenderData& render_data) {
+    TimeFunction;
+
     // Unpack
     const std::vector<doom::Patch>& patches = render_assets.patches;
     const core::Palette& palette = render_assets.palettes[0];
@@ -725,7 +966,7 @@ void RenderWalls(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
         int y_hi = render_data.screen_size_y;
         RenderWallsInner(pixels, wall_raycast_radius, game_map, camera, patches, palette, colormaps,
                          render_data, camera.pos, dir, camera.qe, x, y_lo, y_hi,
-                         cam_len_times_screen_size_y_over_fov_y, 0);
+                         cam_len_times_screen_size_y_over_fov_y);
     }
 }
 
@@ -928,160 +1169,170 @@ int main() {
                            player_window_data.screen_size_y];  // row-major
     f32 wall_raycast_radius[player_window_data.screen_size_x];
 
+    // Estimate our CPU frequency
+    u64 cpu_freq = EstimateCPUTimerFreq(100);
+
     bool continue_running = true;
     while (continue_running) {
-        // Poll and handle events (inputs, window resize, etc.)
-        // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui
-        // wants to use your inputs.
-        // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main
-        //   application, or clear/overwrite your copy of the mouse data.
-        // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main
-        //   application, or clear/overwrite your copy of the keyboard data.
-        // Generally you may always pass all inputs to dear imgui, and hide them from your
-        // application based on those two flags.
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT) {
-                continue_running = false;
-                break;
-            } else if (event.type == SDL_WINDOWEVENT &&
-                       event.window.event == SDL_WINDOWEVENT_CLOSE &&
-                       (event.window.windowID == SDL_GetWindowID(editor_window_data.window) ||
-                        event.window.windowID == SDL_GetWindowID(player_window_data.window))) {
-                continue_running = false;
-                break;
-            } else if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse) {
-                if (event.wheel.preciseY > 0) {
-                    camera_zoom *= 1.1;
-                } else {
-                    camera_zoom /= 1.1;
-                }
-            } else if (event.type == SDL_MOUSEBUTTONDOWN && !io.WantCaptureMouse) {
-                if (event.button.button == SDL_BUTTON_LEFT) {
-                    if (!mouse_is_pressed) {
-                        // New press
-                        mouse_is_pressed = true;
-                        mouse_click_pos = CameraToGlobal(
+        BeginProfile();
+
+        {
+            // Poll and handle events (inputs, window resize, etc.)
+            // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear
+            // imgui wants to use your inputs.
+            // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main
+            //   application, or clear/overwrite your copy of the mouse data.
+            // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your
+            // main
+            //   application, or clear/overwrite your copy of the keyboard data.
+            // Generally you may always pass all inputs to dear imgui, and hide them from your
+            // application based on those two flags.
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+                ImGui_ImplSDL2_ProcessEvent(&event);
+                if (event.type == SDL_QUIT) {
+                    continue_running = false;
+                    break;
+                } else if (event.type == SDL_WINDOWEVENT &&
+                           event.window.event == SDL_WINDOWEVENT_CLOSE &&
+                           (event.window.windowID == SDL_GetWindowID(editor_window_data.window) ||
+                            event.window.windowID == SDL_GetWindowID(player_window_data.window))) {
+                    continue_running = false;
+                    break;
+                } else if (event.type == SDL_MOUSEWHEEL && !io.WantCaptureMouse) {
+                    if (event.wheel.preciseY > 0) {
+                        camera_zoom *= 1.1;
+                    } else {
+                        camera_zoom /= 1.1;
+                    }
+                } else if (event.type == SDL_MOUSEBUTTONDOWN && !io.WantCaptureMouse) {
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        if (!mouse_is_pressed) {
+                            // New press
+                            mouse_is_pressed = true;
+                            mouse_click_pos =
+                                CameraToGlobal(common::Vec2f(event.button.x, event.button.y),
+                                               camera_pos, camera_zoom);
+                            camera_pos_at_mouse_click = camera_pos;
+
+                            // Check for a selected vertex near the current mouse position
+                            selected_edge_index = {core::kInvalidIndex};
+                            selected_vertex_index =
+                                map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
+
+                            // Check for a selected edge near the current mouse position if we did
+                            // not select a vertex
+                            if (!IsValid(selected_vertex_index)) {
+                                selected_edge_index =
+                                    map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                            }
+                        }
+                    } else if (event.button.button == SDL_BUTTON_MIDDLE) {
+                        // Check for a selected edge.
+                        common::Vec2f click_pos = CameraToGlobal(
                             common::Vec2f(event.button.x, event.button.y), camera_pos, camera_zoom);
-                        camera_pos_at_mouse_click = camera_pos;
-
-                        // Check for a selected vertex near the current mouse position
-                        selected_edge_index = {core::kInvalidIndex};
-                        selected_vertex_index =
-                            map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
-
-                        // Check for a selected edge near the current mouse position if we did not
-                        // select a vertex
-                        if (!IsValid(selected_vertex_index)) {
-                            selected_edge_index =
-                                map.FindEdgeNearPosition(mouse_click_pos, qe_mouse_face);
+                        core::QuarterEdgeIndex edge =
+                            map.FindEdgeNearPosition(click_pos, qe_mouse_face);
+                        if (core::IsValid(edge)) {
+                            if (!map.MaybeFlipEdge(edge)) {
+                                std::cout << "Failed to flip edge" << std::endl;
+                            }
                         }
                     }
-                } else if (event.button.button == SDL_BUTTON_MIDDLE) {
-                    // Check for a selected edge.
-                    common::Vec2f click_pos = CameraToGlobal(
-                        common::Vec2f(event.button.x, event.button.y), camera_pos, camera_zoom);
-                    core::QuarterEdgeIndex edge =
-                        map.FindEdgeNearPosition(click_pos, qe_mouse_face);
-                    if (core::IsValid(edge)) {
-                        if (!map.MaybeFlipEdge(edge)) {
-                            std::cout << "Failed to flip edge" << std::endl;
+                } else if (event.type == SDL_MOUSEBUTTONUP && !io.WantCaptureMouse) {
+                    if (mouse_is_pressed) {
+                        // New release
+                        mouse_is_pressed = false;
+
+                        if (core::IsValid(selected_vertex_index)) {
+                            // Check for a selected vertex near the released mouse position
+                            // core::VertexIndex released_vertex_index =
+                            //     map.FindVertexNearPosition(mouse_pos, qe_mouse_face);
+                            //     if (released_vertex_index.has_value() &&
+                            //         released_vertex_index != selected_vertex_index) {
+                            //         // Join those edges
+                            //         int src = *selected_vertex_index;
+                            //         int dst = *released_vertex_index;
+                            //         if (!map.HasEdge(src, dst)) {
+                            //             map.AddDirectedEdge(src, dst);
+                            //         }
+                            //     }
+                        } else {
+                            // We do not have a selected vertex index
+                            const bool holding_v = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_V];
+                            const bool did_not_drag =
+                                common::Norm(mouse_pos - mouse_click_pos) < 0.2;
+                            if (holding_v && did_not_drag) {
+                                // Add a new vertex.
+                                map.AddVertex(mouse_click_pos);
+                            }
                         }
                     }
-                }
-            } else if (event.type == SDL_MOUSEBUTTONUP && !io.WantCaptureMouse) {
-                if (mouse_is_pressed) {
-                    // New release
-                    mouse_is_pressed = false;
+                } else if (event.type == SDL_MOUSEMOTION && !io.WantCaptureMouse) {
+                    // Move the mouse
+                    mouse_pos = CameraToGlobal(
+                        common::Vec2f(event.motion.x, event.motion.y),
+                        mouse_is_pressed ? camera_pos_at_mouse_click : camera_pos, camera_zoom);
+                    // Update the mouse face
+                    qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos, qe_mouse_face);
 
-                    if (core::IsValid(selected_vertex_index)) {
-                        // Check for a selected vertex near the released mouse position
-                        // core::VertexIndex released_vertex_index =
-                        //     map.FindVertexNearPosition(mouse_pos, qe_mouse_face);
-                        //     if (released_vertex_index.has_value() &&
-                        //         released_vertex_index != selected_vertex_index) {
-                        //         // Join those edges
-                        //         int src = *selected_vertex_index;
-                        //         int dst = *released_vertex_index;
-                        //         if (!map.HasEdge(src, dst)) {
-                        //             map.AddDirectedEdge(src, dst);
-                        //         }
-                        //     }
-                    } else {
-                        // We do not have a selected vertex index
-                        const bool holding_v = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_V];
-                        const bool did_not_drag = common::Norm(mouse_pos - mouse_click_pos) < 0.2;
-                        if (holding_v && did_not_drag) {
-                            // Add a new vertex.
-                            map.AddVertex(mouse_click_pos);
+                    if (mouse_is_pressed) {
+                        if (core::IsValid(selected_vertex_index)) {
+                            // Move the given vertex
+                            map.MoveVertexToward(selected_vertex_index, mouse_pos);
+                        } else {
+                            // Pan the camera
+                            camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
                         }
                     }
-                }
-            } else if (event.type == SDL_MOUSEMOTION && !io.WantCaptureMouse) {
-                // Move the mouse
-                mouse_pos = CameraToGlobal(
-                    common::Vec2f(event.motion.x, event.motion.y),
-                    mouse_is_pressed ? camera_pos_at_mouse_click : camera_pos, camera_zoom);
-                // Update the mouse face
-                qe_mouse_face = map.GetMesh().GetEnclosingTriangle(mouse_pos, qe_mouse_face);
 
-                if (mouse_is_pressed) {
-                    if (core::IsValid(selected_vertex_index)) {
-                        // Move the given vertex
-                        map.MoveVertexToward(selected_vertex_index, mouse_pos);
-                    } else {
-                        // Pan the camera
-                        camera_pos = camera_pos_at_mouse_click + mouse_click_pos - mouse_pos;
+                } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
+                    if (event.key.keysym.sym == SDLK_o) {
+                        ExportGameData(map, render_assets);
+                    } else if (event.key.keysym.sym == SDLK_i) {
+                        ImportGameData(&map, &render_assets);
+                        player_cam.qe = map.GetMesh().GetEnclosingTriangle(
+                            player_cam.pos);  // TODO: Move somewhere better
+                    } else if (event.key.keysym.sym == SDLK_w) {
+                        keyboard_state.w = core::KeyboardKeyState_Pressed;
+                    } else if (event.key.keysym.sym == SDLK_s) {
+                        keyboard_state.s = core::KeyboardKeyState_Pressed;
+                    } else if (event.key.keysym.sym == SDLK_d) {
+                        keyboard_state.d = core::KeyboardKeyState_Pressed;
+                    } else if (event.key.keysym.sym == SDLK_a) {
+                        keyboard_state.a = core::KeyboardKeyState_Pressed;
+                    } else if (event.key.keysym.sym == SDLK_q) {
+                        keyboard_state.q = core::KeyboardKeyState_Pressed;
+                    } else if (event.key.keysym.sym == SDLK_e) {
+                        keyboard_state.e = core::KeyboardKeyState_Pressed;
+                    } else if (event.key.keysym.sym == SDLK_DELETE) {
+                        // Delete key pressed!
+                        if (core::IsValid(selected_vertex_index)) {
+                            std::cout << "Delete vertex! [unimplemented]" << std::endl;
+                            // map.RemoveVertex(*selected_vertex_index);
+                            selected_vertex_index = {core::kInvalidIndex};
+                        }
+                        if (core::IsValid(selected_edge_index)) {
+                            // Delete that edge.
+                            std::cout << "Delete edge! [unimplemented]" << std::endl;
+                            // map.RemoveDirectedEdge(*selected_edge_index);
+                            selected_edge_index = {core::kInvalidIndex};
+                        }
                     }
-                }
-
-            } else if (event.type == SDL_KEYDOWN && !io.WantCaptureKeyboard) {
-                if (event.key.keysym.sym == SDLK_o) {
-                    ExportGameData(map, render_assets);
-                } else if (event.key.keysym.sym == SDLK_i) {
-                    ImportGameData(&map, &render_assets);
-                    player_cam.qe = map.GetMesh().GetEnclosingTriangle(
-                        player_cam.pos);  // TODO: Move somewhere better
-                } else if (event.key.keysym.sym == SDLK_w) {
-                    keyboard_state.w = core::KeyboardKeyState_Pressed;
-                } else if (event.key.keysym.sym == SDLK_s) {
-                    keyboard_state.s = core::KeyboardKeyState_Pressed;
-                } else if (event.key.keysym.sym == SDLK_d) {
-                    keyboard_state.d = core::KeyboardKeyState_Pressed;
-                } else if (event.key.keysym.sym == SDLK_a) {
-                    keyboard_state.a = core::KeyboardKeyState_Pressed;
-                } else if (event.key.keysym.sym == SDLK_q) {
-                    keyboard_state.q = core::KeyboardKeyState_Pressed;
-                } else if (event.key.keysym.sym == SDLK_e) {
-                    keyboard_state.e = core::KeyboardKeyState_Pressed;
-                } else if (event.key.keysym.sym == SDLK_DELETE) {
-                    // Delete key pressed!
-                    if (core::IsValid(selected_vertex_index)) {
-                        std::cout << "Delete vertex! [unimplemented]" << std::endl;
-                        // map.RemoveVertex(*selected_vertex_index);
-                        selected_vertex_index = {core::kInvalidIndex};
+                } else if (event.type == SDL_KEYUP && !io.WantCaptureKeyboard) {
+                    if (event.key.keysym.sym == SDLK_w) {
+                        keyboard_state.w = core::KeyboardKeyState_Released;
+                    } else if (event.key.keysym.sym == SDLK_s) {
+                        keyboard_state.s = core::KeyboardKeyState_Released;
+                    } else if (event.key.keysym.sym == SDLK_d) {
+                        keyboard_state.d = core::KeyboardKeyState_Released;
+                    } else if (event.key.keysym.sym == SDLK_a) {
+                        keyboard_state.a = core::KeyboardKeyState_Released;
+                    } else if (event.key.keysym.sym == SDLK_q) {
+                        keyboard_state.q = core::KeyboardKeyState_Released;
+                    } else if (event.key.keysym.sym == SDLK_e) {
+                        keyboard_state.e = core::KeyboardKeyState_Released;
                     }
-                    if (core::IsValid(selected_edge_index)) {
-                        // Delete that edge.
-                        std::cout << "Delete edge! [unimplemented]" << std::endl;
-                        // map.RemoveDirectedEdge(*selected_edge_index);
-                        selected_edge_index = {core::kInvalidIndex};
-                    }
-                }
-            } else if (event.type == SDL_KEYUP && !io.WantCaptureKeyboard) {
-                if (event.key.keysym.sym == SDLK_w) {
-                    keyboard_state.w = core::KeyboardKeyState_Released;
-                } else if (event.key.keysym.sym == SDLK_s) {
-                    keyboard_state.s = core::KeyboardKeyState_Released;
-                } else if (event.key.keysym.sym == SDLK_d) {
-                    keyboard_state.d = core::KeyboardKeyState_Released;
-                } else if (event.key.keysym.sym == SDLK_a) {
-                    keyboard_state.a = core::KeyboardKeyState_Released;
-                } else if (event.key.keysym.sym == SDLK_q) {
-                    keyboard_state.q = core::KeyboardKeyState_Released;
-                } else if (event.key.keysym.sym == SDLK_e) {
-                    keyboard_state.e = core::KeyboardKeyState_Released;
                 }
             }
         }
@@ -1627,5 +1878,8 @@ int main() {
         // refresh rate. (30Hz)
         SDL_RenderPresent(editor_window_data.renderer);
         SDL_RenderPresent(player_window_data.renderer);
+
+        EndAndPrintProfile(cpu_freq);
+        ResetProfiler();
     }
 }
