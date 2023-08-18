@@ -648,7 +648,66 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                 y_ceil = std::max(y_ceil, y_lo + 1);
                 while (y_hi > y_ceil) {
                     y_hi--;
-                    pixels[(y_hi * render_data.screen_size_x) + x] = render_data.color_ceil;
+
+                    // TODO: Find a better way to skip this case / avoid it.
+                    //       (floor spans at or below the screen midline)
+                    if (y_hi <= render_data.screen_size_y / 2.0f) {
+                        continue;
+                    }
+
+                    ActiveSpanData& active_span = active_spans->at(y_hi);
+
+                    // Render the span if we close it out - that is, the sector is different than
+                    // what it was before
+                    bool start_new_span = !active_span.is_active ||
+                                          active_span.sector_id != side_info->sector_id ||
+                                          active_span.x_end < x - 1;
+
+                    if (start_new_span && active_span.is_active) {
+                        // Render the span
+                        RenderSpan(pixels, &active_span, y_hi, flats, palette, colormaps,
+                                   render_data);
+                    }
+
+                    if (start_new_span) {
+                        // Start a new span
+                        active_span.is_active = true;
+                        active_span.x_start = x;
+                        active_span.x_end = x;
+                        active_span.sector_id = side_info->sector_id;
+                        active_span.flat_id = sector->flat_id_ceil;
+
+                        // @efficiency: precompute
+                        f32 zpp = (y_hi - render_data.screen_size_y / 2.0f) *
+                                  (camera.fov.y / render_data.screen_size_y);
+
+                        // distance of the ray from the player through x_lo at the floor.
+                        f32 radius = (z_ceil - camera.z) / zpp;
+
+                        active_span.colormap_index =
+                            sector->light_level +
+                            (u8)(render_data.darkness_per_world_dist * radius);
+                        active_span.colormap_index =
+                            std::min(active_span.colormap_index, max_colormap_index);
+
+                        // Location of the 1st ray's intersection
+                        // TODO: We need to change the camera pos if rendering through a portal
+                        active_span.hit.x = camera.pos.x + radius * ray_dir_lo.x;
+                        active_span.hit.y = camera.pos.y + radius * ray_dir_lo.y;
+
+                        // Each step is(hit_x2 - hit_x) / SCREEN_SIZE_X;
+                        // = ((camera->pos.x + radius * ray_dir_lo_x) - (camera->pos.x + radius *
+                        // ray_dir_lo_x)) / SCREEN_SIZE_X = (radius * ray_dir_lo_x - (radius *
+                        // ray_dir_lo_x)) / SCREEN_SIZE_X = radius * (ray_dir_hi_x - ray_dir_lo_x) /
+                        // SCREEN_SIZE_X
+                        // @efficiency - could precompute the delta divided by sceen size.
+                        active_span.step.x =
+                            radius * (ray_dir_hi.x - ray_dir_lo.x) / render_data.screen_size_x;
+                        active_span.step.y =
+                            radius * (ray_dir_hi.y - ray_dir_lo.y) / render_data.screen_size_x;
+                    } else {
+                        active_span.x_end = x;  // @efficiency - need to do this either way
+                    }
                 }
 
                 // Render the upper texture
@@ -712,10 +771,6 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                         // TODO: We need to change the camera pos if rendering through a portal
                         active_span.hit.x = camera.pos.x + radius * ray_dir_lo.x;
                         active_span.hit.y = camera.pos.y + radius * ray_dir_lo.y;
-
-                        if (!std::isfinite(active_span.hit.x)) {
-                            active_span.hit.x = 0.0;
-                        }
 
                         // Each step is(hit_x2 - hit_x) / SCREEN_SIZE_X;
                         // = ((camera->pos.x + radius * ray_dir_lo_x) - (camera->pos.x + radius *
@@ -853,7 +908,7 @@ void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
                 cam_len_times_screen_size_y_over_fov_y, &active_spans, ray_dir_lo, ray_dir_hi);
     }
 
-    // Render all remaining floor spans
+    // Render all remaining floor and ceiling spans
     for (int y = 0; y < (int)(render_data.screen_size_y); y++) {
         auto& active_span = active_spans[y];
         if (!active_span.is_active) {
