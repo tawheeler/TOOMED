@@ -1109,7 +1109,7 @@ int main() {
     render_data.screen_size_x = player_window_data.screen_size_x;
     render_data.screen_size_y = player_window_data.screen_size_y;
     render_data.half_screen_size_y = render_data.screen_size_y / 2.0f;
-    render_data.darkness_per_world_dist = 2.0f;
+    render_data.darkness_per_world_dist = 1.5f;
     render_data.max_render_steps = 64;
     render_data.color_ceil = 0xFF222222;
     render_data.color_floor = 0xFF444444;
