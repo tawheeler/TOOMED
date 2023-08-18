@@ -14,6 +14,7 @@ struct RenderAssets {
     std::vector<core::Palette> palettes;
     std::vector<core::Colormap> colormaps;
     std::vector<doom::Patch> patches;
+    std::vector<doom::Flat> flats;
 };
 
 // Find the id of the texture with the given name (only 8 chars), if it exists.
