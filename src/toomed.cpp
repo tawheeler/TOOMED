@@ -364,9 +364,11 @@ struct ActiveSpanData {
     common::Vec2f hit;   // Location of ray_dir_lo's intersection with the ground.
     common::Vec2f step;  // Amount to shift 'hit' per pix column moved toward hi's intersection.
     u16 sector_id;       // The sector id for this span.
-    bool is_active;      // Whether there is an active span.
-    int x_start;         // The camera x pixel index where this span starts.
-    int x_end;           // The most recent camera x pixel where this span currently ends.
+    u16 flat_id;         // The flat id for this span (floor or ceiling)
+    u8 colormap_index;
+    bool is_active;  // Whether there is an active span.
+    int x_start;     // The camera x pixel index where this span starts.
+    int x_end;       // The most recent camera x pixel where this span currently ends.
 };
 
 void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int y_lo, int y_hi,
@@ -456,6 +458,37 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
                 }
             }
         }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+void RenderSpan(u32* pixels, ActiveSpanData* span, int y_screen,
+                const std::vector<doom::Flat>& flats, const core::Palette& palette,
+                const std::vector<core::Colormap>& colormaps, const RenderData& render_data) {
+    // Advance `hit` to the current location
+    span->hit += span->step * span->x_start;
+
+    for (int x_span = span->x_start; x_span < span->x_end; x_span++) {
+        // Tile width is 1.0f
+        int x_ind_hit = (int)(floorf(span->hit.x / 1.0f));
+        int y_ind_hit = (int)(floorf(span->hit.y / 1.0f));
+        f32 x_rem_hit = span->hit.x - 1.0f * x_ind_hit;
+        f32 y_rem_hit = span->hit.y - 1.0f * y_ind_hit;
+        u32 texture_x = (int)(x_rem_hit / 1.0f * 64.0f);  // Floor textures are always 64x64
+        u32 texture_y = (int)(y_rem_hit / 1.0f * 64.0f);
+
+        const auto& flat = flats[span->flat_id];
+        u8 palette_index = flat.data[texture_x + 64 * texture_y];
+        palette_index = colormaps[span->colormap_index].map[palette_index];
+        u8 r = palette.rgbs[3 * palette_index];
+        u8 g = palette.rgbs[3 * palette_index + 1];
+        u8 b = palette.rgbs[3 * palette_index + 2];
+        u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
+
+        pixels[(y_screen * render_data.screen_size_x) + x_span] = abgr;
+
+        // Step
+        span->hit += span->step;
     }
 }
 
@@ -595,10 +628,8 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                 f32 x_along_texture = v_face_len - common::Norm(pos_next - mesh.GetVertex(qe_side));
 
                 // Determine the light level
-                u8 light_level_sector = 0;  // base light level (TODO: Move to sector data.)
                 u8 colormap_index =
-                    light_level_sector + (u8)(render_data.darkness_per_world_dist * ray_len);
-                u8 colormap_index_floor = light_level_sector;
+                    sector->light_level + (u8)(render_data.darkness_per_world_dist * ray_len);
 
                 // Make faces that run closer to north-south brighter, and faces running closer
                 // to east-west darker. (cos > 0.7071). We're using the law of cosines.
@@ -612,7 +643,6 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                 u8 max_colormap_index = 32 - 1;
                 colormap_index = std::min(colormap_index, max_colormap_index);
                 const core::Colormap& colormap = colormaps[colormap_index];
-                const core::Colormap& colormap_floor = colormaps[colormap_index_floor];
 
                 // Render the ceiling above the upper texture
                 y_ceil = std::max(y_ceil, y_lo + 1);
@@ -652,37 +682,9 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                                           active_span.x_end < x - 1;
 
                     if (start_new_span && active_span.is_active) {
-                        // Render the previous span
-                        // TODO: Make this a function
-
-                        // Advance `hit` to the current location
-                        active_span.hit += active_span.step * active_span.x_start;
-
-                        for (int x_span = active_span.x_start; x_span < active_span.x_end;
-                             x_span++) {
-                            // Tile width is 1.0f
-                            int x_ind_hit = (int)(floorf(active_span.hit.x / 1.0f));
-                            int y_ind_hit = (int)(floorf(active_span.hit.y / 1.0f));
-                            f32 x_rem_hit = active_span.hit.x - 1.0f * x_ind_hit;
-                            f32 y_rem_hit = active_span.hit.y - 1.0f * y_ind_hit;
-                            u32 texture_x =
-                                (int)(x_rem_hit / 1.0f * 64.0f);  // Floor textures are always 64x64
-                            u32 texture_y = (int)(y_rem_hit / 1.0f * 64.0f);
-
-                            // TODO: Look up sector flat.
-                            const auto& flat = flats[0];
-                            u8 palette_index = flat.data[texture_x + 64 * texture_y];
-                            palette_index = colormap_floor.map[palette_index];
-                            u8 r = palette.rgbs[3 * palette_index];
-                            u8 g = palette.rgbs[3 * palette_index + 1];
-                            u8 b = palette.rgbs[3 * palette_index + 2];
-                            u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
-
-                            pixels[(y_lo * render_data.screen_size_x) + x_span] = abgr;
-
-                            // Step
-                            active_span.hit += active_span.step;
-                        }
+                        // Render the span
+                        RenderSpan(pixels, &active_span, y_lo, flats, palette, colormaps,
+                                   render_data);
                     }
 
                     if (start_new_span) {
@@ -691,6 +693,7 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                         active_span.x_start = x;
                         active_span.x_end = x;
                         active_span.sector_id = side_info->sector_id;
+                        active_span.flat_id = sector->flat_id_floor;
 
                         // @efficiency: precompute
                         f32 zpp = (render_data.screen_size_y / 2.0f - y_lo) *
@@ -698,6 +701,12 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
 
                         // distance of the ray from the player through x_lo at the floor.
                         f32 radius = (camera.z - z_floor) / zpp;
+
+                        active_span.colormap_index =
+                            sector->light_level +
+                            (u8)(render_data.darkness_per_world_dist * radius);
+                        active_span.colormap_index =
+                            std::min(active_span.colormap_index, max_colormap_index);
 
                         // Location of the 1st ray's intersection
                         // TODO: We need to change the camera pos if rendering through a portal
@@ -845,37 +854,12 @@ void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
     }
 
     // Render all remaining floor spans
-    for (int y = 0; y < render_data.screen_size_y; y++) {
+    for (int y = 0; y < (int)(render_data.screen_size_y); y++) {
         auto& active_span = active_spans[y];
         if (!active_span.is_active) {
             continue;
         }
-
-        // Advance `hit` to the current location
-        active_span.hit += active_span.step * active_span.x_start;
-
-        for (int x_span = active_span.x_start; x_span < active_span.x_end; x_span++) {
-            int x_ind_hit = (int)(floorf(active_span.hit.x / 1.0f));  // Tile width is 1.0
-            int y_ind_hit = (int)(floorf(active_span.hit.y / 1.0f));
-            f32 x_rem_hit = active_span.hit.x - 1.0f * x_ind_hit;
-            f32 y_rem_hit = active_span.hit.y - 1.0f * y_ind_hit;
-            u32 texture_x = (int)(x_rem_hit / 1.0f * 64.0f);  // Floor textures are always 64x64
-            u32 texture_y = (int)(y_rem_hit / 1.0f * 64.0f);
-
-            // TODO: Load actual pixel index
-            const auto& flat = render_assets.flats[0];
-            u8 palette_index = flat.data[texture_x + 64 * texture_y];
-            // palette_index = colormaps[0].map[palette_index]; // TODO: store colormap index
-            u8 r = palette.rgbs[3 * palette_index];
-            u8 g = palette.rgbs[3 * palette_index + 1];
-            u8 b = palette.rgbs[3 * palette_index + 2];
-            u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
-
-            pixels[(y * render_data.screen_size_x) + x_span] = abgr;
-
-            // Step
-            active_span.hit += active_span.step;
-        }
+        RenderSpan(pixels, &active_span, y, flats, palette, colormaps, render_data);
     }
 }
 
@@ -1062,7 +1046,7 @@ int main() {
     player_cam.pos = {-5.1, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
-    player_cam.height = 0.4f;
+    player_cam.height = 49.5f / 64.0f;  // 0.4f;
     player_cam.qe = map.GetMesh().GetEnclosingTriangle(player_cam.pos);
 
     RenderData render_data;

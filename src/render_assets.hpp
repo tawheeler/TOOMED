@@ -20,4 +20,7 @@ struct RenderAssets {
 // Find the id of the texture with the given name (only 8 chars), if it exists.
 std::optional<u16> FindTextureIdForDoomTextureName(u8 name[8], const RenderAssets& render_assets);
 
+// Find the id of the flat with the given name (only 8 chars), if it exists.
+std::optional<u16> FindFlatIdForDoomFlatName(u8 name[8], const RenderAssets& render_assets);
+
 }  // namespace core
