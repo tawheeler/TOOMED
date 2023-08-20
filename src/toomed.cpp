@@ -465,6 +465,8 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
 void RenderSpan(u32* pixels, ActiveSpanData* span, int y_screen,
                 const std::vector<doom::Flat>& flats, const core::Palette& palette,
                 const std::vector<core::Colormap>& colormaps, const RenderData& render_data) {
+    TimeFunction;
+
     // Advance `hit` to the current location
     span->hit += span->step * span->x_start;
 
@@ -493,13 +495,13 @@ void RenderSpan(u32* pixels, ActiveSpanData* span, int y_screen,
 }
 
 // ------------------------------------------------------------------------------------------------
-void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
-             const CameraState& camera, const std::vector<doom::Patch>& patches,
-             const std::vector<doom::Flat>& flats, const core::Palette& palette,
-             const std::vector<core::Colormap>& colormaps, const RenderData& render_data,
-             common::Vec2f pos, common::Vec2f dir, core::QuarterEdgeIndex qe_dual, const int x,
-             int y_lo, int y_hi, const f32 cam_len_times_screen_size_y_over_fov_y,
-             std::vector<ActiveSpanData>* active_spans, common::Vec2f ray_dir_lo,
+void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
+             const core::GameMap& game_map, const CameraState& camera,
+             const std::vector<doom::Patch>& patches, const std::vector<doom::Flat>& flats,
+             const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
+             const RenderData& render_data, common::Vec2f pos, common::Vec2f dir,
+             core::QuarterEdgeIndex qe_dual, const int x, int y_lo, int y_hi,
+             const f32 cam_len_times_screen_size_y_over_fov_y, common::Vec2f ray_dir_lo,
              common::Vec2f ray_dir_hi) {
     TimeFunction;
 
@@ -581,13 +583,13 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
             qe_dual = mesh.Rot(qe_side);
 
             // Accumulate distance traveled
-            wall_raycast_radius[x] += min_interp * kProjectionDistance;
+            raycast_distances[x] += min_interp * kProjectionDistance;
 
             const core::SideInfo* side_info = game_map.GetSideInfo(qe_side);
             if (side_info != nullptr) {
                 ProfileBlock sdl_poll_events("Raycast_WithValidSideInfo", __COUNTER__ + 1);
 
-                const f32 ray_len = std::max(wall_raycast_radius[x], 0.01f);
+                const f32 ray_len = std::max(raycast_distances[x], 0.01f);
                 const f32 gamma = cam_len_times_screen_size_y_over_fov_y / ray_len;
 
                 const core::Sector* sector = game_map.GetSector(side_info->sector_id);
@@ -655,7 +657,7 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                         continue;
                     }
 
-                    ActiveSpanData& active_span = active_spans->at(y_hi);
+                    ActiveSpanData& active_span = active_spans[y_hi];
 
                     // Render the span if we close it out - that is, the sector is different than
                     // what it was before
@@ -732,7 +734,7 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
                         continue;
                     }
 
-                    ActiveSpanData& active_span = active_spans->at(y_lo);
+                    ActiveSpanData& active_span = active_spans[y_lo];
 
                     // Render the span if we close it out - that is, the sector is different than
                     // what it was before
@@ -850,9 +852,9 @@ void Raycast(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_ma
 }
 
 // ------------------------------------------------------------------------------------------------
-void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& game_map,
-                 const CameraState& camera, const core::RenderAssets& render_assets,
-                 const RenderData& render_data) {
+void RenderScene(u32* pixels, f32* raycast_distances, f32* dw, ActiveSpanData* active_spans,
+                 const core::GameMap& game_map, const CameraState& camera,
+                 const core::RenderAssets& render_assets, const RenderData& render_data) {
     TimeFunction;
 
     // Unpack
@@ -861,8 +863,9 @@ void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
     const core::Palette& palette = render_assets.palettes[0];
     const std::vector<core::Colormap>& colormaps = render_assets.colormaps;
 
-    // Zero out the way raycast radius
-    memset(wall_raycast_radius, 0, sizeof(f32) * render_data.screen_size_x);
+    // Zero out the raycast distances
+    memset(raycast_distances, 0, sizeof(f32) * render_data.screen_size_x);
+    memset(active_spans, 0, sizeof(ActiveSpanData) * render_data.screen_size_y);
 
     // Camera data
     if (!core::IsValid(camera.qe)) {
@@ -870,11 +873,6 @@ void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
     }
 
     f32 screen_size_y_over_fov_y = render_data.screen_size_y / camera.fov.y;
-
-    // Maintain rendering information for each horizontal pixel line.
-    // This is because pixels can be drawn horizontally via interpolation.
-    // Maintain the hit x/y of the leftmost ray's intersection.
-    std::vector<ActiveSpanData> active_spans(render_data.screen_size_y);  // @efficiency: Prealloc
 
     f32 half_camera_width = camera.fov.x / 2.0f;
 
@@ -888,10 +886,9 @@ void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
 
     for (u32 x = 0; x < render_data.screen_size_x; x++) {
         // Camera to pixel column
-        const f32 dw = half_camera_width -
-                       (camera.fov.x * x) / render_data.screen_size_x;  // @efficiency: precompute
-        const common::Vec2f cp = {camera.dir.x - dw * camera.dir.y,
-                                  camera.dir.y + dw * camera.dir.x};
+        const f32 delta_w = dw[x];
+        const common::Vec2f cp = {camera.dir.x - delta_w * camera.dir.y,
+                                  camera.dir.y + delta_w * camera.dir.x};
 
         // Distance from the camera to the column
         const f32 cam_len = common::Norm(cp);
@@ -903,9 +900,9 @@ void RenderScene(u32* pixels, f32* wall_raycast_radius, const core::GameMap& gam
         // Step through triangles until we hit a solid triangle
         int y_lo = -1;
         int y_hi = render_data.screen_size_y;
-        Raycast(pixels, wall_raycast_radius, game_map, camera, patches, flats, palette, colormaps,
-                render_data, camera.pos, dir, camera.qe, x, y_lo, y_hi,
-                cam_len_times_screen_size_y_over_fov_y, &active_spans, ray_dir_lo, ray_dir_hi);
+        Raycast(pixels, raycast_distances, active_spans, game_map, camera, patches, flats, palette,
+                colormaps, render_data, camera.pos, dir, camera.qe, x, y_lo, y_hi,
+                cam_len_times_screen_size_y_over_fov_y, ray_dir_lo, ray_dir_hi);
     }
 
     // Render all remaining floor and ceiling spans
@@ -1078,7 +1075,7 @@ int main() {
     ImportGameData(&map, &render_assets);
 
     // Load a doom level
-    LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
+    // LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
@@ -1096,9 +1093,9 @@ int main() {
     core::ClearKeyboardState(&keyboard_state);
 
     CameraState player_cam = {};
-    // player_cam.pos = {5.0, 5.0};
+    player_cam.pos = {5.0, 5.0};
     // player_cam.pos = {-10.25, -50.5};
-    player_cam.pos = {-5.1, -50.5};
+    // player_cam.pos = {-5.1, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 49.5f / 64.0f;  // 0.4f;
@@ -1117,7 +1114,14 @@ int main() {
     // Player view data
     u32 player_view_pixels[player_window_data.screen_size_x *
                            player_window_data.screen_size_y];  // row-major
-    f32 wall_raycast_radius[player_window_data.screen_size_x];
+    f32 raycast_distances[player_window_data.screen_size_x];
+    ActiveSpanData active_spans[render_data.screen_size_y];
+
+    // This precomputation assumes that the fov does not change
+    f32 dw[player_window_data.screen_size_x];
+    for (int x = 0; x < player_window_data.screen_size_x; x++) {
+        dw[x] = player_cam.fov.x / 2.0f - (player_cam.fov.x * x) / render_data.screen_size_x;
+    }
 
     // Estimate our CPU frequency
     u64 cpu_freq = EstimateCPUTimerFreq(100);
@@ -1779,6 +1783,24 @@ int main() {
                                            (void*)(&step_f32), (void*)(NULL), "%.3f", flags)) {
                         sector->z_floor = std::min(sector->z_floor, sector->z_ceil);
                     }
+                    if (ImGui::InputScalar("ceiling flat_id", ImGuiDataType_U16,
+                                           (void*)(&sector->flat_id_ceil), (void*)(&step_u16),
+                                           (void*)(NULL), "%d", flags)) {
+                        // Ensure it is in bounds.
+                        usize n_flats = render_assets.patches.size();
+                        if (sector->flat_id_ceil >= n_flats) {
+                            sector->flat_id_ceil = n_flats - 1;
+                        }
+                    }
+                    if (ImGui::InputScalar("floor flat_id", ImGuiDataType_U16,
+                                           (void*)(&sector->flat_id_floor), (void*)(&step_u16),
+                                           (void*)(NULL), "%d", flags)) {
+                        // Ensure it is in bounds.
+                        usize n_flats = render_assets.patches.size();
+                        if (sector->flat_id_floor >= n_flats) {
+                            sector->flat_id_floor = n_flats - 1;
+                        }
+                    }
                 }
 
             } else {
@@ -1812,8 +1834,8 @@ int main() {
             MoveCamera(&player_cam, keyboard_state, map, dt);
 
             // Render the player view.
-            RenderScene(player_view_pixels, wall_raycast_radius, map, player_cam, render_assets,
-                        render_data);
+            RenderScene(player_view_pixels, raycast_distances, dw, active_spans, map, player_cam,
+                        render_assets, render_data);
 
             SDL_UpdateTexture(player_window_data.texture, NULL, player_view_pixels,
                               player_window_data.screen_size_x * 4);

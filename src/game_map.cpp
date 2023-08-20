@@ -387,21 +387,9 @@ bool GameMap::LoadSectors(const std::string& name, const AssetsExporter& exporte
     sectors_.clear();
     sectors_.reserve(n_sectors);
 
-    struct SectorOld {
-        u16 flags;
-        f32 z_floor;
-        f32 z_ceil;
-    };
-
     for (u32 i = 0; i < n_sectors; i++) {
-        SectorOld sector_old = *(SectorOld*)(data + offset);
-        offset += sizeof(SectorOld);
-
-        Sector sector = {};
-        sector.flags = sector_old.flags;
-        sector.z_floor = sector_old.z_floor;
-        sector.z_ceil = sector_old.z_ceil;
-
+        Sector sector = *(Sector*)(data + offset);
+        offset += sizeof(Sector);
         sectors_.push_back(sector);
     }
 
@@ -613,15 +601,6 @@ bool GameMap::LoadFromDoomData(const u8* linedefs_data, u32 linedefs_data_size,
         Sector& sector = sectors_[i_sector];
         DoomSector doom_sector = *(DoomSector*)(sectors_data + sectors_data_offset);
         sectors_data_offset += sizeof(DoomSector);
-
-        auto res = FindFlatIdForDoomFlatName(doom_sector.texture_name_floor, render_assets);
-        if (!res.has_value()) {
-            sector.flat_id_floor = 0;
-        }
-        res = FindFlatIdForDoomFlatName(doom_sector.texture_name_ceil, render_assets);
-        if (!res.has_value()) {
-            sector.flat_id_floor = 0;
-        }
 
         sector.flags = 0x0000;  // TODO
         sector.flat_id_floor =
