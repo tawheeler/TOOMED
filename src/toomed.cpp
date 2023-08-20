@@ -255,8 +255,9 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
                                      (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
 
                 // We also need to rotate our speed
-                // (For now, just zero it out)
-                camera_state->vel = {0.0, 0.0};
+                camera_state->vel = {
+                    -cos_theta * camera_state->vel.x - sin_theta * camera_state->vel.y,
+                    sin_theta * camera_state->vel.x - cos_theta * camera_state->vel.y};
             } else if (stop_at_edge) {
                 // The new triangle is solid, so do not change triangles.
                 // Lose all velocity into the boundary surface.
