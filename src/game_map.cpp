@@ -83,6 +83,7 @@ bool GameMap::AddSideInfo(QuarterEdgeIndex qe_primal) {
     // Add a new sideinfo.
     SideInfo side_info = {};
     side_info.qe = qe_primal;
+    side_info.qe_portal = {kInvalidIndex};
     side_infos_[side_info.qe] = side_info;
 
     return true;

@@ -509,6 +509,8 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
 
     constexpr f32 kProjectionDistance = 100.0;  // Ridiculously large
 
+    f32 camera_z = camera.z;
+
     bool recurse = true;
     u32 n_steps = 0;
     while (recurse && n_steps <= render_data.max_render_steps) {
@@ -601,9 +603,8 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                 // Get the height on the other side, if it is passable.
                 const bool is_passable = ((side_info->flags & core::kSideInfoFlag_PASSABLE) > 0);
                 bool is_portal = core::IsValid(side_info->qe_portal);
-                if (is_passable) {
-                    core::QuarterEdgeIndex qe_sym =
-                        is_portal ? side_info->qe_portal : mesh.Sym(qe_side);
+                if (is_passable && !is_portal) {
+                    core::QuarterEdgeIndex qe_sym = mesh.Sym(qe_side);
                     const core::SideInfo* side_info_sym = game_map.GetSideInfo(qe_sym);
 
                     if (side_info_sym != nullptr) {
@@ -616,14 +617,13 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                     }
                 }
 
-                // TODO: If a portal, the z on the other side is different
                 // TODO: Check how it is possible that y_floor ever be above the halfway point - we
                 //       should never see such floors.
                 f32 half_screen_size_y = render_data.half_screen_size_y;
-                int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera.z));
-                int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera.z));
-                int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera.z));
-                int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera.z));
+                int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera_z));
+                int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera_z));
+                int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera_z));
+                int y_floor = (int)(half_screen_size_y + gamma * (z_floor - camera_z));
 
                 // Calculate where along the segment we intersected
                 f32 v_face_len = common::Norm(v_face);
@@ -684,7 +684,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                                   (camera.fov.y / render_data.screen_size_y);
 
                         // distance of the ray from the player through x_lo at the floor.
-                        f32 radius = (z_ceil - camera.z) / zpp;
+                        f32 radius = (z_ceil - camera_z) / zpp;
 
                         active_span.colormap_index =
                             sector->light_level +
@@ -761,7 +761,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                                   (camera.fov.y / render_data.screen_size_y);
 
                         // distance of the ray from the player through x_lo at the floor.
-                        f32 radius = (camera.z - z_floor) / zpp;
+                        f32 radius = (camera_z - z_floor) / zpp;
 
                         active_span.colormap_index =
                             sector->light_level +
@@ -807,7 +807,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                     if (is_portal) {
                         qe_dual = mesh.Tor(side_info->qe_portal);
 
-                        // do the transform on pos_next and dir
+                        // Do the transform on pos_next and dir
 
                         // The vector along the new face is
                         common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
@@ -826,6 +826,14 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                         // Now to get the new direction, we need to rotate out of the new face.
                         dir_next = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
                                     (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+
+                        // The camera height on the other side.
+                        const core::SideInfo* side_info_portal =
+                            game_map.GetSideInfo(side_info->qe_portal);
+                        const core::Sector* sector_side = game_map.GetSector(side_info->sector_id);
+                        const core::Sector* sector_portal =
+                            game_map.GetSector(side_info_portal->sector_id);
+                        camera_z += (sector_portal->z_floor - sector_side->z_floor);
                     }
 
                     // Recurse.
@@ -1807,14 +1815,8 @@ int main() {
                 ImGui::Text("there is no sideinfo for this edge");
                 if (ImGui::Button("Create SideInfo")) {
                     bool success = map.AddSideInfo(selected_edge_index);
-                    if (success) {
-                        // If we add a side info, check all edges on that triangle and make side
-                        // infos for them if there are not some already.
-                        core::QuarterEdgeIndex qe = mesh.Prev(mesh.Sym(selected_edge_index));
-                        while (qe != selected_edge_index) {
-                            map.AddSideInfo(qe);
-                            qe = mesh.Prev(mesh.Sym(qe));
-                        }
+                    if (!success) {
+                        std::cout << "Failed to add a side info" << std::endl;
                     }
                 }
             }
