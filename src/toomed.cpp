@@ -948,6 +948,11 @@ void ImportGameData(core::GameMap* map, core::RenderAssets* render_assets) {
         std::cout << "Failed to load patches!" << std::endl;
     }
 
+    succeeded = doom::ImportFlats(&(render_assets->flats), exporter);
+    if (!succeeded) {
+        std::cout << "Failed to load flats!" << std::endl;
+    }
+
     succeeded = map->Import(exporter);
     if (!succeeded) {
         std::cout << "Failed to load game map! Clearing possibly-corrupted map." << std::endl;
@@ -968,6 +973,7 @@ void ExportGameData(const core::GameMap& map, const core::RenderAssets& render_a
     exporter.AddEntry(core::ExportPalettes(render_assets.palettes));
     exporter.AddEntry(core::ExportColormaps(render_assets.colormaps));
     exporter.AddEntry(doom::ExportPatches(render_assets.patches));
+    exporter.AddEntry(doom::ExportFlats(render_assets.flats));
 
     std::cout << "Exporting map data" << std::endl;
     bool succeeded = map.Export(&exporter);
@@ -1108,6 +1114,7 @@ int main() {
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 49.5f / 64.0f;  // 0.4f;
+    player_cam.z = player_cam.height;
     player_cam.qe = map.GetMesh().GetEnclosingTriangle(player_cam.pos);
 
     RenderData render_data;

@@ -394,4 +394,71 @@ std::vector<Flat> ParseDoomFlats(const std::unique_ptr<core::WadImporter>& impor
     return flats;
 }
 
+// ------------------------------------------------------------------------------------------------
+core::AssetsExporterEntry ExportFlats(const std::vector<Flat>& flats) {
+    core::AssetsExporterEntry entry;
+    entry.SetName(kAssetEntryFlats);
+
+    // --------------------------------------
+    // Serialize the content
+    std::stringstream buffer;
+
+    // Serialize the counts
+    u32 n_flats = flats.size();
+    buffer.write(reinterpret_cast<const char*>(&n_flats), sizeof(u32));
+
+    // Serialize the patches
+    for (const Flat& flat : flats) {
+        // Write the name in 16 chars
+        size_t n_char_bytes = 16ul;
+        size_t n_bytes_in_name = flat.name.size();
+        size_t n_bytes_of_name_to_write = std::min(n_char_bytes, n_bytes_in_name);
+        buffer.write(flat.name.c_str(), n_bytes_of_name_to_write);
+        while (n_bytes_of_name_to_write < n_char_bytes) {
+            buffer.put(0);
+            n_bytes_of_name_to_write++;
+        }
+
+        // Write the flat pixel index data
+        buffer.write(reinterpret_cast<const char*>(flat.data), sizeof(flat.data));
+    }
+
+    // --------------------------------------
+    entry.SetData(buffer.str());
+
+    return entry;
+}
+
+// ------------------------------------------------------------------------------------------------
+bool ImportFlats(std::vector<doom::Flat>* flats, const core::AssetsExporter& exporter) {
+    const core::AssetsExporterEntry* entry = exporter.FindEntry(kAssetEntryFlats);
+    if (entry == nullptr) {
+        std::cout << "Failed to find entry " << kAssetEntryFlats << std::endl;
+        return false;
+    }
+
+    u32 offset = 0;
+    const u8* data = entry->data.data();
+
+    flats->clear();
+
+    u32 n_flats = *(u32*)(data + offset);
+    offset += sizeof(u32);
+
+    flats->resize(n_flats);
+    for (u32 i = 0; i < n_flats; i++) {
+        // Read the 16-char name
+        // TODO: Verify that this works properly with shorter names
+        flats->at(i).name = std::string((char*)(data + offset), 16);
+        offset += 16;
+
+        // Read the patch pixel data
+        u32 n_bytes_flat_data = sizeof(flats->at(i).data);
+        memcpy(flats->at(i).data, data + offset, n_bytes_flat_data);
+        offset += n_bytes_flat_data;
+    }
+
+    return true;
+}
+
 }  // namespace doom

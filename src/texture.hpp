@@ -80,4 +80,9 @@ struct Flat {
 
 std::vector<Flat> ParseDoomFlats(const std::unique_ptr<core::WadImporter>& importer);
 
+// The name of the exported asset entry.
+const std::string kAssetEntryFlats = "flats";
+core::AssetsExporterEntry ExportFlats(const std::vector<Flat>& flats);
+bool ImportFlats(std::vector<doom::Flat>* flats, const core::AssetsExporter& exporter);
+
 }  // namespace doom
