@@ -471,6 +471,7 @@ void RenderSpan(u32* pixels, ActiveSpanData* span, int y_screen,
     // Advance `hit` to the current location
     span->hit += span->step * span->x_start;
 
+    int pixels_index = y_screen * render_data.screen_size_x + span->x_start;
     for (int x_span = span->x_start; x_span < span->x_end; x_span++) {
         // Tile width is 1.0f
         int x_ind_hit = (int)(floorf(span->hit.x / 1.0f));
@@ -488,10 +489,11 @@ void RenderSpan(u32* pixels, ActiveSpanData* span, int y_screen,
         u8 b = palette.rgbs[3 * palette_index + 2];
         u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
 
-        pixels[(y_screen * render_data.screen_size_x) + x_span] = abgr;
+        pixels[pixels_index] = abgr;
 
         // Step
         span->hit += span->step;
+        pixels_index += 1;
     }
 }
 
