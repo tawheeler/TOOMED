@@ -251,13 +251,13 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
                 f32 sin_theta = abs(common::Cross(v_face, camera_state->dir) / v_face_len);
 
                 // Now to get the new direction, we need to rotate out of the new face.
-                camera_state->dir = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
-                                     (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+                camera_state->dir = {(cos_theta * dc.x + sin_theta * dc.y) / dc_len,
+                                     (-sin_theta * dc.x + cos_theta * dc.y) / dc_len};
 
-                // We also need to rotate our speed
+                // We also need to rotate our speed (TODO)
                 camera_state->vel = {
-                    -cos_theta * camera_state->vel.x - sin_theta * camera_state->vel.y,
-                    sin_theta * camera_state->vel.x - cos_theta * camera_state->vel.y};
+                    cos_theta * camera_state->vel.x - sin_theta * camera_state->vel.y,
+                    sin_theta * camera_state->vel.x + cos_theta * camera_state->vel.y};
             } else if (stop_at_edge) {
                 // The new triangle is solid, so do not change triangles.
                 // Lose all velocity into the boundary surface.
