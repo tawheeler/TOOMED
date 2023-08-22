@@ -1092,7 +1092,7 @@ int main() {
     ImportGameData(&map, &render_assets);
 
     // Load a doom level
-    // LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
+    LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
@@ -1110,9 +1110,9 @@ int main() {
     core::ClearKeyboardState(&keyboard_state);
 
     CameraState player_cam = {};
-    player_cam.pos = {5.0, 5.0};
+    // player_cam.pos = {5.0, 5.0};
     // player_cam.pos = {-10.25, -50.5};
-    // player_cam.pos = {-5.1, -50.5};
+    player_cam.pos = {-5.1, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 49.5f / 64.0f;  // 0.4f;
