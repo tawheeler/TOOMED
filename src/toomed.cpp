@@ -511,18 +511,15 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
     const core::DelaunayMesh mesh = game_map.GetMesh();
 
     constexpr f32 kProjectionDistance = 100.0;  // Ridiculously large
+    constexpr f32 kGetRightHandedNessEps = 1e-4f;
 
     f32 camera_z = camera.z;
 
     bool recurse = true;
     u32 n_steps = 0;
-    while (recurse && n_steps <= render_data.max_render_steps) {
+    while (recurse && n_steps <= render_data.max_render_steps && y_lo < y_hi) {
         recurse = false;
         n_steps += 1;
-
-        if (y_lo >= y_hi) {
-            return;  // We've rendered every pixel
-        }
 
         // Grab the enclosing triangle.
         auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe_dual);
@@ -539,15 +536,14 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
         core::QuarterEdgeIndex qe_side = {core::kInvalidIndex};
 
         // The edge vector of the face that we last crossed
-        common::Vec2f v_face = {0.0, 0.0};
+        common::Vec2f v_face;
 
         // See if we cross any of the 3 faces for the triangle we are in,
         // and cross the first segment.
-        const f32 eps = 1e-4;
         {
             ProfileBlock sdl_poll_events("Raycast_EdgeChecks", __COUNTER__ + 1);
 
-            if (common::GetRightHandedness(a, b, pos_next) < -eps) {
+            if (common::GetRightHandedness(a, b, pos_next) < -kGetRightHandedNessEps) {
                 // We would cross AB
                 common::Vec2f v = b - a;
                 common::Vec2f w = pos - a;
@@ -558,7 +554,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                     v_face = v;
                 }
             }
-            if (common::GetRightHandedness(b, c, pos_next) < -eps) {
+            if (common::GetRightHandedness(b, c, pos_next) < -kGetRightHandedNessEps) {
                 // We would cross BC
                 common::Vec2f v = c - b;
                 common::Vec2f w = pos - b;
@@ -569,7 +565,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                     v_face = v;
                 }
             }
-            if (common::GetRightHandedness(c, a, pos_next) < -eps) {
+            if (common::GetRightHandedness(c, a, pos_next) < -kGetRightHandedNessEps) {
                 // We would cross CA
                 common::Vec2f v = a - c;
                 common::Vec2f w = pos - c;
@@ -650,15 +646,9 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                 const core::Colormap& colormap = colormaps[colormap_index];
 
                 // Render the ceiling above the upper texture
-                y_ceil = std::max(y_ceil, y_lo + 1);
+                y_ceil = std::max(y_ceil, (int)(render_data.screen_size_y >> 1));
                 while (y_hi > y_ceil) {
                     y_hi--;
-
-                    // TODO: Find a better way to skip this case / avoid it.
-                    //       (floor spans at or below the screen midline)
-                    if (y_hi <= render_data.screen_size_y / 2.0f) {
-                        continue;
-                    }
 
                     ActiveSpanData& active_span = active_spans[y_hi];
 
@@ -727,15 +717,9 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                 }
 
                 // Render the floor below the lower texture
-                y_floor = std::min(y_floor, y_hi - 1);
+                y_floor = std::min(y_floor, (int)(render_data.screen_size_y >> 1));
                 while (y_floor > y_lo) {
                     y_lo++;
-
-                    // TODO: Find a better way to skip this case / avoid it.
-                    //       (floor spans at or below the screen midline)
-                    if (y_lo >= render_data.screen_size_y / 2.0f) {
-                        continue;
-                    }
 
                     ActiveSpanData& active_span = active_spans[y_lo];
 
@@ -1112,7 +1096,7 @@ int main() {
     CameraState player_cam = {};
     // player_cam.pos = {5.0, 5.0};
     // player_cam.pos = {-10.25, -50.5};
-    player_cam.pos = {-5.1, -50.5};
+    player_cam.pos = {-4.9, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 49.5f / 64.0f;  // 0.4f;
@@ -1864,6 +1848,17 @@ int main() {
         SDL_RenderPresent(player_window_data.renderer);
 
         EndAndPrintProfile(cpu_freq);
+
+        // Maintain a running average of the total tick time.
+        static f64 total_cpu_elapsed_ms_smoothed = 60.000;  // Init close to current reading
+        constexpr f64 kTotalCpuElapsedSmoothingConst = 0.95;
+        u64 total_cpu_elapsed = kGlobalProfiler.tsc_end - kGlobalProfiler.tsc_start;
+        f64 total_cpu_elapsed_ms = 1000.0 * (f64)total_cpu_elapsed / (f64)cpu_freq;
+        total_cpu_elapsed_ms_smoothed =
+            total_cpu_elapsed_ms_smoothed * kTotalCpuElapsedSmoothingConst +
+            total_cpu_elapsed_ms * (1.0 - kTotalCpuElapsedSmoothingConst);
+        printf("Total time smoothed: %0.4fms\n", total_cpu_elapsed_ms_smoothed);
+
         ResetProfiler();
     }
 }

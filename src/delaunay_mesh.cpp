@@ -4,8 +4,6 @@
 #include <cmath>
 #include <iostream>
 
-#include "profiler.cpp"
-
 namespace core {
 
 // ------------------------------------------------------------------------------------------------
@@ -397,7 +395,6 @@ QuarterEdgeIndex DelaunayMesh::GetEnclosingTriangle(const common::Vec2f& p) cons
 // ------------------------------------------------------------------------------------------------
 std::tuple<QuarterEdgeIndex, QuarterEdgeIndex, QuarterEdgeIndex>
 DelaunayMesh::GetTriangleQuarterEdges(QuarterEdgeIndex qe_dual) const {
-    TimeFunction;
     QuarterEdgeIndex qe_nxt1 = Get(qe_dual).i_nxt;
     QuarterEdgeIndex qe_nxt2 = Get(qe_nxt1).i_nxt;
     QuarterEdgeIndex qe_ab = Get(qe_dual).i_rot;

@@ -154,3 +154,25 @@ static void ResetProfiler(void) {
 //   RenderWallsInner_EdgeChecks[  8222]:    2856858 (4.34%, 6.16% w/children)
 //   RenderWallsInner_WithValidSideInfo[  2257]:    3172907 (4.82%, 12.92% w/children)
 //   RenderWalls         [     1]:     129132 (0.20%, 74.81% w/children)
+
+// After adding floor and ceiling rendering
+// Total time: 68.4885ms (CPU freq 1991996640)
+//   GetRightHandedness  [ 38878]:    2110694 (1.55%)
+//   RenderPatchColumn   [  1623]:   14123995 (10.35%)
+//   RenderSpan          [   502]:    6697976 (4.91%)
+//   Raycast             [   640]:   70439031 (51.63%, 76.19% w/children)
+//   Raycast_EdgeChecks  [ 12959]:    6179480 (4.53%, 6.06% w/children)
+//   Raycast_WithValidSideInfo[  3390]:    7078638 (5.19%, 18.50% w/children)
+//   RenderScene         [     1]:     242694 (0.18%, 78.32% w/children)
+// Total time smoothed: 69.2931ms
+
+// After skipping one triangle check
+// Total time: 66.7742ms (CPU freq 1992002070)
+//   GetRightHandedness  [ 25919]:    1360790 (1.02%)
+//   RenderPatchColumn   [  1623]:   13847854 (10.41%)
+//   RenderSpan          [   502]:    7105657 (5.34%)
+//   Raycast             [   640]:   72094385 (54.20%, 78.40% w/children)
+//   Raycast_EdgeChecks  [ 12959]:    5390282 (4.05%, 5.07% w/children)
+//   Raycast_WithValidSideInfo[  3390]:    7211444 (5.42%, 19.13% w/children)
+//   RenderScene         [     1]:     319789 (0.24%, 80.68% w/children)
+// Total time smoothed: 67.0397ms
