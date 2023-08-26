@@ -354,7 +354,7 @@ struct RenderData {
     u32 n_pixels_per_world_unit;  // Number of pixels across a texture on a 1 unit span should be.
     u32 screen_size_x;            // The number of pixels across the canvas is
     u32 screen_size_y;            // The number of pixels high the canvas is
-    f32 half_screen_size_y;
+    u32 half_screen_size_y;
     f32 darkness_per_world_dist;  // for the 32 colormaps, by increasing darkness
     u32 max_render_steps;         // Maximum number of triangles we will traverse
     u32 color_ceil;
@@ -431,13 +431,9 @@ void RenderPatchColumn(u32* pixels, int x_screen, int y_lower, int y_upper, int 
                 // post data.
 
                 // Render pixels
-                // TODO: @efficiency Extract color more efficiently.
                 u8 palette_index = patch.post_data[column_offset];
                 palette_index = colormap.map[palette_index];
-                u8 r = palette.rgbs[3 * palette_index];
-                u8 g = palette.rgbs[3 * palette_index + 1];
-                u8 b = palette.rgbs[3 * palette_index + 2];
-                u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
+                u32 abgr = *(u32*)(palette.rgbs + 3 * palette_index) | 0xFF000000;
 
                 // Render this color for all screen pixels that map to y_patch
                 u16 y_patch_discrete = (u16)y_patch;
@@ -484,11 +480,7 @@ void RenderSpan(u32* pixels, ActiveSpanData* span, int y_screen,
         const auto& flat = flats[span->flat_id];
         u8 palette_index = flat.data[texture_x + 64 * texture_y];
         palette_index = colormaps[span->colormap_index].map[palette_index];
-        u8 r = palette.rgbs[3 * palette_index];
-        u8 g = palette.rgbs[3 * palette_index + 1];
-        u8 b = palette.rgbs[3 * palette_index + 2];
-        u32 abgr = 0xFF000000 + (((u32)b) << 16) + (((u32)g) << 8) + r;
-
+        u32 abgr = *(u32*)(palette.rgbs + 3 * palette_index) | 0xFF000000;
         pixels[pixels_index] = abgr;
 
         // Step
@@ -503,17 +495,24 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
              const std::vector<doom::Patch>& patches, const std::vector<doom::Flat>& flats,
              const core::Palette& palette, const std::vector<core::Colormap>& colormaps,
              const RenderData& render_data, common::Vec2f pos, common::Vec2f dir,
-             core::QuarterEdgeIndex qe_dual, const int x, int y_lo, int y_hi,
+             core::QuarterEdgeIndex qe_dual, const int x,
              const f32 cam_len_times_screen_size_y_over_fov_y, common::Vec2f ray_dir_lo,
              common::Vec2f ray_dir_hi) {
     TimeFunction;
 
     const core::DelaunayMesh mesh = game_map.GetMesh();
+    const int half_screen_size_y = render_data.half_screen_size_y;
 
     constexpr f32 kProjectionDistance = 100.0;  // Ridiculously large
     constexpr f32 kGetRightHandedNessEps = 1e-4f;
 
     f32 camera_z = camera.z;
+
+    int y_lo = -1;
+    int y_hi = render_data.screen_size_y;
+
+    // TODO: Figure out graphics artifact when looking up stairs, likely due to patch rendering or
+    // y_lo.
 
     bool recurse = true;
     u32 n_steps = 0;
@@ -618,7 +617,6 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
 
                 // TODO: Check how it is possible that y_floor ever be above the halfway point - we
                 //       should never see such floors.
-                f32 half_screen_size_y = render_data.half_screen_size_y;
                 int y_ceil = (int)(half_screen_size_y + gamma * (z_ceil - camera_z));
                 int y_upper = (int)(half_screen_size_y + gamma * (z_upper - camera_z));
                 int y_lower = (int)(half_screen_size_y + gamma * (z_lower - camera_z));
@@ -634,7 +632,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
 
                 // Make faces that run closer to north-south brighter, and faces running closer
                 // to east-west darker. (cos > 0.7071). We're using the law of cosines.
-                bool face_is_closer_to_east_west = v_face.x / v_face_len > 0.7071;
+                bool face_is_closer_to_east_west = std::abs(v_face.x / v_face_len) > 0.7071;
                 if (face_is_closer_to_east_west) {
                     colormap_index += 1;  // darker
                 } else if (colormap_index > 0) {
@@ -646,9 +644,13 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                 const core::Colormap& colormap = colormaps[colormap_index];
 
                 // Render the ceiling above the upper texture
-                y_ceil = std::max(y_ceil, (int)(render_data.screen_size_y >> 1));
+                y_ceil = std::max(y_ceil, y_lo);
                 while (y_hi > y_ceil) {
                     y_hi--;
+                    if (y_hi < half_screen_size_y) {
+                        y_hi = y_ceil;
+                        break;
+                    }
 
                     ActiveSpanData& active_span = active_spans[y_hi];
 
@@ -678,6 +680,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
 
                         // distance of the ray from the player through x_lo at the floor.
                         f32 radius = (z_ceil - camera_z) / zpp;
+                        radius = std::max(radius, 0.01f);
 
                         active_span.colormap_index =
                             sector->light_level +
@@ -708,18 +711,23 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                 // Render the upper texture
                 if (y_hi > y_upper) {
                     f32 column_height = z_ceil - z_upper;
-                    RenderPatchColumn(pixels, x, y_upper, y_ceil, std::max(y_upper, y_lo), y_hi,
+                    int y_upper_clamped = std::max(y_upper, y_lo);
+                    RenderPatchColumn(pixels, x, y_upper, y_ceil, y_upper_clamped, y_hi,
                                       x_along_texture, side_info->texture_info_upper.x_offset,
                                       side_info->texture_info_upper.y_offset, column_height,
                                       patches[side_info->texture_info_upper.texture_id], palette,
                                       colormap, render_data);
-                    y_hi = y_upper;
+                    y_hi = y_upper_clamped;
                 }
 
                 // Render the floor below the lower texture
-                y_floor = std::min(y_floor, (int)(render_data.screen_size_y >> 1));
+                y_floor = std::min(y_floor, y_hi);
                 while (y_floor > y_lo) {
                     y_lo++;
+                    if (y_lo >= half_screen_size_y) {
+                        y_lo = y_floor;
+                        break;
+                    }
 
                     ActiveSpanData& active_span = active_spans[y_lo];
 
@@ -749,6 +757,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
 
                         // distance of the ray from the player through x_lo at the floor.
                         f32 radius = (camera_z - z_floor) / zpp;
+                        radius = std::max(radius, 0.01f);
 
                         active_span.colormap_index =
                             sector->light_level +
@@ -766,7 +775,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                         // ray_dir_lo_x)) / SCREEN_SIZE_X = (radius * ray_dir_lo_x - (radius *
                         // ray_dir_lo_x)) / SCREEN_SIZE_X = radius * (ray_dir_hi_x - ray_dir_lo_x) /
                         // SCREEN_SIZE_X
-                        // @efficiency - could precompute the delta divided by sceen size.
+                        // @efficiency - could precompute the delta divided by screen size.
                         active_span.step.x =
                             radius * (ray_dir_hi.x - ray_dir_lo.x) / render_data.screen_size_x;
                         active_span.step.y =
@@ -779,12 +788,13 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                 // Render the lower texture
                 if (y_lower > y_lo) {
                     f32 column_height = z_lower - z_floor;
-                    RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, std::min(y_lower, y_hi),
+                    int y_lower_clamped = std::min(y_lower, y_hi);
+                    RenderPatchColumn(pixels, x, y_floor, y_lower, y_lo, y_lower_clamped,
                                       x_along_texture, side_info->texture_info_lower.x_offset,
                                       side_info->texture_info_lower.y_offset, column_height,
                                       patches[side_info->texture_info_lower.texture_id], palette,
                                       colormap, render_data);
-                    y_lo = y_lower;
+                    y_lo = y_lower_clamped;
                 }
 
                 // Recurse if the side is passable.
@@ -893,10 +903,8 @@ void RenderScene(u32* pixels, f32* raycast_distances, f32* dw, ActiveSpanData* a
         const common::Vec2f dir = cp / cam_len;
 
         // Step through triangles until we hit a solid triangle
-        int y_lo = -1;
-        int y_hi = render_data.screen_size_y;
         Raycast(pixels, raycast_distances, active_spans, game_map, camera, patches, flats, palette,
-                colormaps, render_data, camera.pos, dir, camera.qe, x, y_lo, y_hi,
+                colormaps, render_data, camera.pos, dir, camera.qe, x,
                 cam_len_times_screen_size_y_over_fov_y, ray_dir_lo, ray_dir_hi);
     }
 
@@ -1066,8 +1074,8 @@ int main() {
     //        "Failed to load DOOM colormaps");
     // render_assets.patches = doom::ParseDoomTextures(doom_assets);
     // ASSERT(render_assets.patches.size() > 0, "Failed to load DOOM patches");
-    render_assets.flats = doom::ParseDoomFlats(doom_assets);
-    ASSERT(render_assets.flats.size() > 0, "Failed to load DOOM flats");
+    // render_assets.flats = doom::ParseDoomFlats(doom_assets);
+    // ASSERT(render_assets.flats.size() > 0, "Failed to load DOOM flats");
 
     // Create our map
     core::GameMap map;
@@ -1075,8 +1083,28 @@ int main() {
     // Import our game data
     ImportGameData(&map, &render_assets);
 
+    // Generate some basic flats for me
+    // {
+    //     doom::Flat flat;
+    //     flat.name = "mono_92";
+    //     memset(flat.data, 92, sizeof(flat.data));
+    //     render_assets.flats.push_back(flat);
+    // }
+    // {
+    //     doom::Flat flat;
+    //     flat.name = "mono_100";
+    //     memset(flat.data, 100, sizeof(flat.data));
+    //     render_assets.flats.push_back(flat);
+    // }
+    // {
+    //     doom::Flat flat;
+    //     flat.name = "mono_110";
+    //     memset(flat.data, 110, sizeof(flat.data));
+    //     render_assets.flats.push_back(flat);
+    // }
+
     // Load a doom level
-    LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
+    // LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
 
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
@@ -1094,9 +1122,9 @@ int main() {
     core::ClearKeyboardState(&keyboard_state);
 
     CameraState player_cam = {};
-    // player_cam.pos = {5.0, 5.0};
+    player_cam.pos = {5.0, 5.0};
     // player_cam.pos = {-10.25, -50.5};
-    player_cam.pos = {-4.9, -50.5};
+    // player_cam.pos = {-4.9, -50.5};
     player_cam.dir = {1.0, 0.0};
     player_cam.fov = {1.5, 0.84375};
     player_cam.height = 49.5f / 64.0f;  // 0.4f;
@@ -1107,7 +1135,7 @@ int main() {
     render_data.n_pixels_per_world_unit = 64;
     render_data.screen_size_x = player_window_data.screen_size_x;
     render_data.screen_size_y = player_window_data.screen_size_y;
-    render_data.half_screen_size_y = render_data.screen_size_y / 2.0f;
+    render_data.half_screen_size_y = render_data.screen_size_y >> 1;
     render_data.darkness_per_world_dist = 1.5f;
     render_data.max_render_steps = 64;
     render_data.color_ceil = 0xFF222222;
@@ -1789,7 +1817,7 @@ int main() {
                                            (void*)(&sector->flat_id_ceil), (void*)(&step_u16),
                                            (void*)(NULL), "%d", flags)) {
                         // Ensure it is in bounds.
-                        usize n_flats = render_assets.patches.size();
+                        usize n_flats = render_assets.flats.size();
                         if (sector->flat_id_ceil >= n_flats) {
                             sector->flat_id_ceil = n_flats - 1;
                         }
@@ -1798,7 +1826,7 @@ int main() {
                                            (void*)(&sector->flat_id_floor), (void*)(&step_u16),
                                            (void*)(NULL), "%d", flags)) {
                         // Ensure it is in bounds.
-                        usize n_flats = render_assets.patches.size();
+                        usize n_flats = render_assets.flats.size();
                         if (sector->flat_id_floor >= n_flats) {
                             sector->flat_id_floor = n_flats - 1;
                         }
