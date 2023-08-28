@@ -240,24 +240,26 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
                 common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
                 common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
                 common::Vec2f dc = d - c;
-                f32 dc_len = common::Norm(dc);
+                dc = Normalize(dc);
 
                 // Our new position is:
-                camera_state->pos = c + (x_along_texture / dc_len) * dc;
+                camera_state->pos = c + x_along_texture * dc;
 
                 // A -> B is v_face (and v_face_len)
-                // P -> Q (our ray) is dir
                 f32 cos_theta = common::Dot(v_face, camera_state->dir) / v_face_len;
                 f32 sin_theta = abs(common::Cross(v_face, camera_state->dir) / v_face_len);
 
-                // Now to get the new direction, we need to rotate out of the new face.
-                camera_state->dir = {(cos_theta * dc.x + sin_theta * dc.y) / dc_len,
-                                     (-sin_theta * dc.x + cos_theta * dc.y) / dc_len};
+                // Now to get the new direction, we need to rotate out of the new face
+                camera_state->dir = {-cos_theta * dc.x - sin_theta * dc.y,
+                                     sin_theta * dc.x - cos_theta * dc.y};
 
-                // We also need to rotate our speed (TODO)
-                camera_state->vel = {
-                    cos_theta * camera_state->vel.x - sin_theta * camera_state->vel.y,
-                    sin_theta * camera_state->vel.x + cos_theta * camera_state->vel.y};
+                f32 vel_len = common::Norm(camera_state->vel);
+                cos_theta = common::Dot(v_face, camera_state->vel) / (v_face_len * vel_len);
+                sin_theta = abs(common::Cross(v_face, camera_state->vel) / (v_face_len * vel_len));
+
+                // We also need to rotate our speed
+                camera_state->vel = {vel_len * (-cos_theta * dc.x - sin_theta * dc.y),
+                                     vel_len * (sin_theta * dc.x - cos_theta * dc.y)};
             } else if (stop_at_edge) {
                 // The new triangle is solid, so do not change triangles.
                 // Lose all velocity into the boundary surface.
@@ -1201,8 +1203,8 @@ int main() {
 
                             // Check for a selected vertex near the current mouse position
                             selected_edge_index = {core::kInvalidIndex};
-                            selected_vertex_index =
-                                map.FindVertexNearPosition(mouse_click_pos, qe_mouse_face);
+                            selected_vertex_index = map.FindVertexNearPosition(
+                                mouse_click_pos, qe_mouse_face, 0.3f / camera_zoom * 50.0f);
 
                             // Check for a selected edge near the current mouse position if we did
                             // not select a vertex
