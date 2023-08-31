@@ -137,8 +137,11 @@ Vec2f Interp(const Vec2f& a, const Vec2f& b, float interpolant);
 // round the result to the nearest fixed-point value.
 Vec2i Interp(const Vec2i& a, const Vec2i& b, float interpolant);
 
-// Rotate the given angle right by 90 deg.
+// Rotate the given vector right by 90 deg.
 Vec2f Rotr(const Vec2f& a);
+
+// Rotate the given vector right by theta deg, given sin(theta) and cos(theta).
+Vec2f Rot(const Vec2f& a, float sin_theta, float cos_theta);
 
 // Determine whether the given points are in right-hand order (CCW).
 // Returns a value > 0 if right-hand (CCW).

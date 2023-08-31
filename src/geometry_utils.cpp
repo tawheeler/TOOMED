@@ -104,6 +104,11 @@ Vec2i Interp(const Vec2i& a, const Vec2i& b, float interpolant) {
 Vec2f Rotr(const Vec2f& a) { return Vec2f(-a.y, a.x); }
 
 // ------------------------------------------------------------------------------------------------
+Vec2f Rot(const Vec2f& a, float sin_theta, float cos_theta) {
+    return Vec2f{cos_theta * a.x - sin_theta * a.y, sin_theta * a.x + cos_theta * a.y};
+}
+
+// ------------------------------------------------------------------------------------------------
 float GetRightHandedness(const Vec2f& a, const Vec2f& b, const Vec2f& c) {
     TimeFunction;
     // return Det(a.x, a.y, 1.0f, b.x, b.y, 1.0f, c.x, c.y, 1.0f);

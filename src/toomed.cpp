@@ -239,27 +239,26 @@ void MoveCamera(CameraState* camera_state, const core::KeyBoardState& keyboard_s
                 // The vector along the new face is
                 common::Vec2f c = mesh.GetVertex(side_info->qe_portal);
                 common::Vec2f d = mesh.GetVertex(mesh.Sym(side_info->qe_portal));
-                common::Vec2f dc = d - c;
-                dc = Normalize(dc);
+                common::Vec2f cd = d - c;
+                cd = Normalize(cd);
 
                 // Our new position is:
-                camera_state->pos = c + x_along_texture * dc;
+                camera_state->pos = c + x_along_texture * cd;
 
-                // A -> B is v_face (and v_face_len)
-                f32 cos_theta = common::Dot(v_face, camera_state->dir) / v_face_len;
-                f32 sin_theta = abs(common::Cross(v_face, camera_state->dir) / v_face_len);
+                f32 angle_ab = std::atan2(v_face.y, v_face.x);
+                f32 angle_cd = std::atan2(cd.y, cd.x);
+                f32 angle_rot = common::CounterClockwiseAngleDistance(angle_ab, angle_cd) + M_PI;
+                f32 cos_rot = std::cos(angle_rot);
+                f32 sin_rot = std::sin(angle_rot);
 
                 // Now to get the new direction, we need to rotate out of the new face
-                camera_state->dir = {-cos_theta * dc.x - sin_theta * dc.y,
-                                     sin_theta * dc.x - cos_theta * dc.y};
-
-                f32 vel_len = common::Norm(camera_state->vel);
-                cos_theta = common::Dot(v_face, camera_state->vel) / (v_face_len * vel_len);
-                sin_theta = abs(common::Cross(v_face, camera_state->vel) / (v_face_len * vel_len));
+                camera_state->dir = {cos_rot * camera_state->dir.x - sin_rot * camera_state->dir.y,
+                                     sin_rot * camera_state->dir.x + cos_rot * camera_state->dir.y};
 
                 // We also need to rotate our speed
-                camera_state->vel = {vel_len * (-cos_theta * dc.x - sin_theta * dc.y),
-                                     vel_len * (sin_theta * dc.x - cos_theta * dc.y)};
+                camera_state->vel = {cos_rot * camera_state->vel.x - sin_rot * camera_state->vel.y,
+                                     sin_rot * camera_state->vel.x + cos_rot * camera_state->vel.y};
+
             } else if (stop_at_edge) {
                 // The new triangle is solid, so do not change triangles.
                 // Lose all velocity into the boundary surface.
@@ -508,6 +507,8 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
     constexpr f32 kProjectionDistance = 100.0;  // Ridiculously large
     constexpr f32 kGetRightHandedNessEps = 1e-4f;
 
+    common::Vec2f camera_dir = camera.dir;
+    common::Vec2f camera_pos = camera.pos;
     f32 camera_z = camera.z;
 
     int y_lo = -1;
@@ -680,7 +681,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                         f32 zpp = (y_hi - render_data.screen_size_y / 2.0f) *
                                   (camera.fov.y / render_data.screen_size_y);
 
-                        // distance of the ray from the player through x_lo at the floor.
+                        // distance of the ray from the player through y_hi at the ceiling.
                         f32 radius = (z_ceil - camera_z) / zpp;
                         radius = std::max(radius, 0.01f);
 
@@ -691,11 +692,11 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                             std::min(active_span.colormap_index, max_colormap_index);
 
                         // Location of the 1st ray's intersection
-                        // TODO: We need to change the camera pos if rendering through a portal
-                        active_span.hit.x = camera.pos.x + radius * ray_dir_lo.x;
-                        active_span.hit.y = camera.pos.y + radius * ray_dir_lo.y;
+                        active_span.hit.x = camera_pos.x + radius * ray_dir_lo.x;
+                        active_span.hit.y = camera_pos.y + radius * ray_dir_lo.y;
 
-                        // Each step is(hit_x2 - hit_x) / SCREEN_SIZE_X;
+                        // Each step is
+                        // (hit_x2 - hit_x) / SCREEN_SIZE_X;
                         // = ((camera->pos.x + radius * ray_dir_lo_x) - (camera->pos.x + radius *
                         // ray_dir_lo_x)) / SCREEN_SIZE_X = (radius * ray_dir_lo_x - (radius *
                         // ray_dir_lo_x)) / SCREEN_SIZE_X = radius * (ray_dir_hi_x - ray_dir_lo_x) /
@@ -757,7 +758,7 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                         f32 zpp = (render_data.screen_size_y / 2.0f - y_lo) *
                                   (camera.fov.y / render_data.screen_size_y);
 
-                        // distance of the ray from the player through x_lo at the floor.
+                        // distance of the ray from the player through y_lo at the floor.
                         f32 radius = (camera_z - z_floor) / zpp;
                         radius = std::max(radius, 0.01f);
 
@@ -768,9 +769,8 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                             std::min(active_span.colormap_index, max_colormap_index);
 
                         // Location of the 1st ray's intersection
-                        // TODO: We need to change the camera pos if rendering through a portal
-                        active_span.hit.x = camera.pos.x + radius * ray_dir_lo.x;
-                        active_span.hit.y = camera.pos.y + radius * ray_dir_lo.y;
+                        active_span.hit.x = camera_pos.x + radius * ray_dir_lo.x;
+                        active_span.hit.y = camera_pos.y + radius * ray_dir_lo.y;
 
                         // Each step is(hit_x2 - hit_x) / SCREEN_SIZE_X;
                         // = ((camera->pos.x + radius * ray_dir_lo_x) - (camera->pos.x + radius *
@@ -825,6 +825,32 @@ void Raycast(u32* pixels, f32* raycast_distances, ActiveSpanData* active_spans,
                         // Now to get the new direction, we need to rotate out of the new face.
                         dir_next = {(-cos_theta * dc.x - sin_theta * dc.y) / dc_len,
                                     (sin_theta * dc.x - cos_theta * dc.y) / dc_len};
+
+                        // Update the camera position to be where it would be, as if we were on the
+                        // other side of the destination portal looking through it.
+                        camera_pos = pos_next - dir_next * ray_len;
+
+                        // Need to also update our ray directions
+                        // Doing this correctly requires rotating the original camera.
+                        // We don't want dir_next, but rather the overall camera's dir.
+                        // @efficiency - precompute all viewing column angles.
+                        f32 column_angle_run = ((int)(render_data.screen_size_x / 2) - x) *
+                                               camera.fov.x / render_data.screen_size_x;
+                        f32 column_angle_hypot = std::hypot(column_angle_run, 1.0f);
+                        f32 sin_pix_column_angle = column_angle_run / column_angle_hypot;
+                        f32 cos_pix_column_angle = 1.0f / column_angle_hypot;
+
+                        // Back out our camera direction by rotating back by the viewing column
+                        // angle.
+                        camera_dir = Rot(dir_next, -sin_pix_column_angle, cos_pix_column_angle);
+
+                        // raycast direction for leftmost pixel column, x = 0
+                        f32 half_camera_width = camera.fov.x / 2.0f;
+                        ray_dir_lo = {camera_dir.x - half_camera_width * camera_dir.y,
+                                      camera_dir.y + half_camera_width * camera_dir.x};
+                        // raycast direction for rightmost pixel column, x = screen_size_x
+                        ray_dir_hi = {camera_dir.x + half_camera_width * camera_dir.y,
+                                      camera_dir.y - half_camera_width * camera_dir.x};
 
                         // The camera height on the other side.
                         const core::SideInfo* side_info_portal =
@@ -886,7 +912,6 @@ void RenderScene(u32* pixels, f32* raycast_distances, f32* dw, ActiveSpanData* a
     // raycast direction for leftmost pixel column, x = 0
     common::Vec2f ray_dir_lo = {camera.dir.x - half_camera_width * camera.dir.y,
                                 camera.dir.y + half_camera_width * camera.dir.x};
-    // raycast direction for x = 0
     // raycast direction for rightmost pixel column, x = screen_size_x
     common::Vec2f ray_dir_hi = {camera.dir.x + half_camera_width * camera.dir.y,
                                 camera.dir.y - half_camera_width * camera.dir.x};
