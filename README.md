@@ -1,2 +1,2 @@
 # TOOMED
-The TOOM editor.
+The [TOOM](https://github.com/tawheeler/toom/tree/main) editor.
