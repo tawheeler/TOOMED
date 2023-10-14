@@ -1133,6 +1133,229 @@ int main() {
     // Load a doom level
     // LoadDoomLevel(&map, "E1M1", doom_assets, render_assets);
 
+    // Export mesh for Julia
+    // {
+    //     // First, print out the mesh vertices
+    //     const core::DelaunayMesh& mesh = map.GetMesh();
+
+    //     printf("vertices = Vector{Float64}[\n");
+    //     std::map<core::VertexIndex, int> vertex_to_index;  // 0 - indexed
+    //     core::VertexIndex i_vertex = mesh.GetFirstVertexIndex();
+    //     while (core::IsValid(i_vertex)) {
+    //         auto v = mesh.GetVertex(i_vertex);
+    //         vertex_to_index[i_vertex] = vertex_to_index.size();
+    //         printf("\t[%.3f, %.3f],\n", v.x, v.y);
+    //         i_vertex = mesh.GetNext(i_vertex);
+    //     }
+    //     printf("];\n");
+
+    //     printf("edges = Tuple{Int, Int}[\n");
+    //     int n_printed = 0;
+    //     core::QuarterEdgeIndex qe = mesh.GetFirstQuarterEdgeIndex();
+    //     while (core::IsValid(qe)) {
+    //         if (mesh.IsPrimal(qe)) {
+    //             // Get its opposite side.
+    //             core::QuarterEdgeIndex qe_sym = mesh.Sym(qe);
+
+    //             const core::VertexData& a = mesh.GetVertexData(qe);
+    //             const core::VertexData& b = mesh.GetVertexData(qe_sym);
+    //             if (a.i_self > b.i_self) {  // Avoid rendering edges twice
+    //                 printf("\t(%d, %d),", vertex_to_index[a.i_self], vertex_to_index[b.i_self]);
+    //                 n_printed += 1;
+    //                 if (n_printed % 5 == 0) {
+    //                     printf("\n");
+    //                 }
+    //             }
+    //         }
+    //         // Get the next one
+    //         qe = mesh.GetNext(qe);
+    //     }
+    //     printf("];\n");
+
+    //     // Print out whether each edge is traversible or not.
+    //     // An edge is traversible if it is not constrained or if it is a sideinfo that is
+    //     // traversible where the sector sides don't change in z more than a given threshold.
+    //     constexpr f32 kMaxTraversibleDeltaZ = 0.5;
+    //     printf("edge_traversibility = BitVector([\n");
+    //     qe = mesh.GetFirstQuarterEdgeIndex();
+    //     n_printed = 0;
+    //     while (core::IsValid(qe)) {
+    //         if (mesh.IsPrimal(qe)) {
+    //             // Get its opposite side.
+    //             core::QuarterEdgeIndex qe_sym = mesh.Sym(qe);
+
+    //             const core::VertexData& a = mesh.GetVertexData(qe);
+    //             const core::VertexData& b = mesh.GetVertexData(qe_sym);
+    //             if (a.i_self > b.i_self) {
+    //                 // This is a new edge. Determine traversibility.
+    //                 bool is_traversible = true;
+
+    //                 if (mesh.IsConstrained(qe)) {
+    //                     is_traversible = false;
+
+    //                     // Check for a SideInfo.
+    //                     const core::SideInfo* sideinfo_qe = map.GetSideInfo(qe);
+    //                     const core::SideInfo* sideinfo_qe_sym = map.GetSideInfo(qe_sym);
+
+    //                     if (sideinfo_qe != nullptr && sideinfo_qe_sym != nullptr) {
+    //                         // Potentially traversible. Check the passable flag.
+    //                         if ((sideinfo_qe->flags & core::kSideInfoFlag_PASSABLE) > 0) {
+    //                             // Finally, verify the sector height change.
+    //                             const core::Sector* sector =
+    //                             map.GetSector(sideinfo_qe->sector_id); f32 z1 = sector->z_floor;
+    //                             const core::Sector* sector_sym =
+    //                                 map.GetSector(sideinfo_qe_sym->sector_id);
+    //                             f32 z2 = sector_sym->z_floor;
+    //                             if (std::abs(z2 - z1) < kMaxTraversibleDeltaZ) {
+    //                                 is_traversible = true;
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+
+    //                 printf("\t%s,", is_traversible ? "true" : "false");
+    //                 n_printed += 1;
+    //                 if (n_printed % 5 == 0) {
+    //                     printf("\n");
+    //                 }
+    //             }
+    //         }
+    //         // Get the next one
+    //         qe = mesh.GetNext(qe);
+    //     }
+    //     printf("]);\n");
+
+    //     // Print out the centers of every triangle.
+    //     printf("dual_vertices = Vector{Float64}[\n");
+    //     std::map<core::QuarterEdgeIndex, int> dual_qe_to_index;  // 1 - indexed
+    //     qe = mesh.GetFirstQuarterEdgeIndex();
+    //     while (core::IsValid(qe)) {
+    //         if (mesh.IsDual(qe)) {
+    //             // Check to make sure this quarter edge is the lowest among the ones that share
+    //             its
+    //             // origin.
+    //             if (qe < mesh.Next(qe) && qe < mesh.Prev(qe)) {
+    //                 const auto [qe_ab, qe_bc, qe_ca] = mesh.GetTriangleQuarterEdges(qe);
+    //                 const common::Vec2f& a = mesh.GetVertex(qe_ab);
+    //                 const common::Vec2f& b = mesh.GetVertex(qe_bc);
+    //                 const common::Vec2f& c = mesh.GetVertex(qe_ca);
+    //                 const common::Vec2f v = (a + b + c) / 3.0f;
+
+    //                 printf("\t[%.3f, %.3f],\n", v.x, v.y);
+    //                 dual_qe_to_index[qe] = dual_qe_to_index.size();
+    //             }
+    //         }
+    //         // Get the next one
+    //         qe = mesh.GetNext(qe);
+    //     }
+    //     printf("];\n");
+
+    //     // Print out the traversible dual edges
+    //     printf("dual_edges = Tuple{Int, Int}[\n");
+    //     qe = mesh.GetFirstQuarterEdgeIndex();
+    //     while (core::IsValid(qe)) {
+    //         if (mesh.IsDual(qe)) {
+    //             // Get its opposite side.
+    //             core::QuarterEdgeIndex qe_sym = mesh.Sym(qe);
+
+    //             core::QuarterEdgeIndex qe_a = std::min(std::min(qe, mesh.Next(qe)),
+    //             mesh.Prev(qe)); core::QuarterEdgeIndex qe_b =
+    //                 std::min(std::min(qe_sym, mesh.Next(qe_sym)), mesh.Prev(qe_sym));
+
+    //             // Check to see whether the edge is traversible.
+    //             const core::VertexData& a = mesh.GetVertexData(mesh.Rot(qe));
+    //             const core::VertexData& b = mesh.GetVertexData(mesh.Rot(qe_sym));
+    //             if (a.i_self > b.i_self) {
+    //                 // This is a new edge. Determine traversibility.
+    //                 bool is_traversible = true;
+
+    //                 if (mesh.IsConstrained(mesh.Rot(qe))) {
+    //                     is_traversible = false;
+    //                     // Check for a SideInfo.
+    //                     const core::SideInfo* sideinfo_qe = map.GetSideInfo(mesh.Rot(qe));
+    //                     const core::SideInfo* sideinfo_qe_sym =
+    //                     map.GetSideInfo(mesh.Rot(qe_sym));
+
+    //                     if (sideinfo_qe != nullptr && sideinfo_qe_sym != nullptr) {
+    //                         // Potentially traversible. Check the passable flag.
+    //                         if ((sideinfo_qe->flags & core::kSideInfoFlag_PASSABLE) > 0) {
+    //                             // Finally, verify the sector height change.
+    //                             const core::Sector* sector =
+    //                             map.GetSector(sideinfo_qe->sector_id); f32 z1 = sector->z_floor;
+    //                             const core::Sector* sector_sym =
+    //                                 map.GetSector(sideinfo_qe_sym->sector_id);
+    //                             f32 z2 = sector_sym->z_floor;
+    //                             if (std::abs(z2 - z1) < kMaxTraversibleDeltaZ) {
+    //                                 is_traversible = true;
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+
+    //                 if (is_traversible) {
+    //                     printf("\t(%d, %d),\n", dual_qe_to_index[qe_a], dual_qe_to_index[qe_b]);
+    //                 }
+    //             }
+    //         }
+    //         // Get the next one
+    //         qe = mesh.GetNext(qe);
+    //     }
+    //     printf("];\n");
+
+    //     // Print out which primal edge was traversed for a dual edge
+    //     printf("primal_edges = Tuple{Int, Int}[\n");
+    //     qe = mesh.GetFirstQuarterEdgeIndex();
+    //     while (core::IsValid(qe)) {
+    //         if (mesh.IsDual(qe)) {
+    //             // Get its opposite side.
+    //             core::QuarterEdgeIndex qe_sym = mesh.Sym(qe);
+
+    //             core::QuarterEdgeIndex qe_a = std::min(std::min(qe, mesh.Next(qe)),
+    //             mesh.Prev(qe)); core::QuarterEdgeIndex qe_b =
+    //                 std::min(std::min(qe_sym, mesh.Next(qe_sym)), mesh.Prev(qe_sym));
+
+    //             // Check to see whether the edge is traversible.
+    //             const core::VertexData& a = mesh.GetVertexData(mesh.Rot(qe));
+    //             const core::VertexData& b = mesh.GetVertexData(mesh.Rot(qe_sym));
+    //             if (a.i_self > b.i_self) {
+    //                 // This is a new edge. Determine traversibility.
+    //                 bool is_traversible = true;
+
+    //                 if (mesh.IsConstrained(mesh.Rot(qe))) {
+    //                     is_traversible = false;
+    //                     // Check for a SideInfo.
+    //                     const core::SideInfo* sideinfo_qe = map.GetSideInfo(mesh.Rot(qe));
+    //                     const core::SideInfo* sideinfo_qe_sym =
+    //                     map.GetSideInfo(mesh.Rot(qe_sym));
+
+    //                     if (sideinfo_qe != nullptr && sideinfo_qe_sym != nullptr) {
+    //                         // Potentially traversible. Check the passable flag.
+    //                         if ((sideinfo_qe->flags & core::kSideInfoFlag_PASSABLE) > 0) {
+    //                             // Finally, verify the sector height change.
+    //                             const core::Sector* sector =
+    //                             map.GetSector(sideinfo_qe->sector_id); f32 z1 = sector->z_floor;
+    //                             const core::Sector* sector_sym =
+    //                                 map.GetSector(sideinfo_qe_sym->sector_id);
+    //                             f32 z2 = sector_sym->z_floor;
+    //                             if (std::abs(z2 - z1) < kMaxTraversibleDeltaZ) {
+    //                                 is_traversible = true;
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+
+    //                 if (is_traversible) {
+    //                     printf("\t(%d, %d),\n", vertex_to_index[a.i_self],
+    //                            vertex_to_index[b.i_self]);
+    //                 }
+    //             }
+    //         }
+    //         // Get the next one
+    //         qe = mesh.GetNext(qe);
+    //     }
+    //     printf("];\n");
+    // }
+
     // Camera parameters
     common::Vec2f camera_pos = {2.0, 2.0};
     f32 camera_zoom = 50.0;
