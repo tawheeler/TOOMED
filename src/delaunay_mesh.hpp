@@ -213,6 +213,29 @@ class DelaunayMesh {
     // This method will not succeed if there is a constrained edge that overlaps AB.
     QuarterEdgeIndex EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
 
+    // Records an edge split in which an existing edge had a new vertex added to it,
+    // resulting in two edges.
+    struct EdgeSplit {
+        QuarterEdgeIndex qe_a;  // One of the quarter edges in the original, pre-split edge.
+        QuarterEdgeIndex qe_b;  // The other quarter edge in the original, pre-split edge.
+        QuarterEdgeIndex qe_c;  // The new quarter edge CB between A and B.
+    };
+
+    struct EnforceEdgeResult {
+        bool success;
+
+        // The quarter edges of the newly added edge, running from A to B.
+        // If unsuccessful, this will be empty.
+        // There might be multiple segments if there are existing vertices between A and B, or if
+        // there are constrained edges that cross AB that we have to split.
+        std::vector<QuarterEdgeIndex> quarter_edges;
+
+        // All of the split events that occurred.
+        // We split any enforced edges that our new edge has to cross.
+        std::vector<EdgeSplit> splits;
+    };
+    EnforceEdgeResult EnforceEdgeButBetter(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
+
     // // Find the triangle in our mesh that encloses the given point.
     // // Return a dual quarter edge originating from the triangle face.
     QuarterEdgeIndex GetEnclosingTriangle(const common::Vec2f& p, QuarterEdgeIndex qe_dual) const;
@@ -244,7 +267,22 @@ class DelaunayMesh {
     QuarterEdgeIndex LivenQuarterEdge();
 
     // Add a new vertex to the mesh, returning the index of the newly added vertex.
+    // This method does not connect it to anything.
     VertexIndex AddVertex(float x, float y);
+
+    // Connects a new vertex to the quarter edges that define its enclosing face.
+    // We assume that the given inputs are valid.
+    // Returns the new quarter edge from the new point to A.
+    QuarterEdgeIndex ConnectVertexInFace(QuarterEdgeIndex qe_ab, QuarterEdgeIndex qe_bc,
+                                         QuarterEdgeIndex qe_ca, VertexIndex i_vertex);
+
+    // Connects a new vertex to the quad that surrounds it, where we assume that the new
+    // vertex lies on the edge DE. F is the far vertex, and G is the vertex across DE from F.
+    // We assume that the given inputs are valid and that our edge is not the boundary edge.
+    // The original edge DE is split.
+    // Returns the new quarter edge from the new point to D.
+    QuarterEdgeIndex ConnectVertexOnEdge(QuarterEdgeIndex qe_de, QuarterEdgeIndex qe_ef,
+                                         QuarterEdgeIndex qe_fd, VertexIndex i_vertex);
 
     // Add a new edge between the vertices at index a and b.
     // Create the quarter edges associated with the given undirected edge.
@@ -272,6 +310,20 @@ class DelaunayMesh {
         QuarterEdgeIndex qe_ab;
     };
     EnforceEdgeInternalResult EnforceEdgeInternal(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b);
+
+    enum class EnforceEdgeInternalResultCategory {
+        EDGE_EXISTS,    // The requested edge already exist
+        EDGE_FLIPPED,   // A quad was flipped to produce the new edge
+        EDGE_SPLIT,     // An enforced edge was split and new segments were added
+        NONCONVEX_QUAD  // Could not flip the edge, as the quad is nonconvex.
+    };
+    struct EnforceEdgeButBetterInternalResult {
+        bool progress;  // whether progress was made
+        QuarterEdgeIndex qe_ab;
+        EnforceEdgeInternalResultCategory category;
+    };
+    EnforceEdgeButBetterInternalResult EnforceEdgeButBetterInternal(QuarterEdgeIndex qe_a,
+                                                                    VertexIndex i_vertex_b);
 
     // The maximum radius that a point can be from the origin
     float bounding_radius_;

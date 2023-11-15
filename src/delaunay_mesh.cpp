@@ -709,6 +709,91 @@ void DelaunayMesh::UnconstrainEdge(QuarterEdgeIndex qe) {
 // }
 
 // ------------------------------------------------------------------------------------------------
+QuarterEdgeIndex DelaunayMesh::ConnectVertexInFace(QuarterEdgeIndex qe_ab, QuarterEdgeIndex qe_bc,
+                                                   QuarterEdgeIndex qe_ca, VertexIndex i_vertex) {
+    // Add the new edges and splice them in
+    QuarterEdgeIndex ap = AddEdge(Get(qe_ab).i_vertex, i_vertex);
+    QuarterEdgeIndex bp = AddEdge(Get(qe_bc).i_vertex, i_vertex);
+    QuarterEdgeIndex cp = AddEdge(Get(qe_ca).i_vertex, i_vertex);
+
+    Splice(ap, qe_ab);
+    Splice(bp, qe_bc);
+    Splice(cp, qe_ca);
+
+    // TODO: Figure out splice such that we get this desired effect.
+    //       i.e. can we replace these next calls with three calls to splice?
+    QuarterEdgeIndex pa = Sym(ap);
+    QuarterEdgeIndex pb = Sym(bp);
+    QuarterEdgeIndex pc = Sym(cp);
+
+    Get(pa).i_nxt = pb;
+    Get(pb).i_nxt = pc;
+    Get(pc).i_nxt = pa;
+
+    Get(Get(pa).i_rot).i_nxt = Get(cp).i_rot;
+    Get(Get(pb).i_rot).i_nxt = Get(ap).i_rot;
+    Get(Get(pc).i_rot).i_nxt = Get(bp).i_rot;
+
+    // Give back a quarter edge with p as its source.
+    return pa;
+}
+
+// ------------------------------------------------------------------------------------------------
+QuarterEdgeIndex DelaunayMesh::ConnectVertexOnEdge(QuarterEdgeIndex qe_de, QuarterEdgeIndex qe_ef,
+                                                   QuarterEdgeIndex qe_fd, VertexIndex i_vertex) {
+    // Grab other quarter edges that we will need
+    QuarterEdgeIndex qe_ge = Prev(Sym(Prev(qe_de)));
+    QuarterEdgeIndex qe_dg = Prev(qe_de);
+
+    // Reset the things that point to DE
+    Get(qe_dg).i_nxt = Sym(qe_fd);
+    QuarterEdgeIndex qe_ge_tor = Tor(qe_ge);
+    Get(qe_ge_tor).i_nxt = Rot(Sym(qe_ef));
+    Get(qe_ef).i_nxt = Sym(qe_ge);
+    QuarterEdgeIndex qe_fd_tor = Tor(qe_fd);
+    Get(qe_fd_tor).i_nxt = Rot(Sym(qe_dg));
+
+    // Reset DP as a quarter edge, and change it to PD
+    QuarterEdgeIndex qe_pd = Sym(qe_de);
+    Get(qe_pd).i_vertex = i_vertex;
+    Get(qe_pd).i_nxt = qe_pd;
+    Get(Get(qe_pd).i_rot).i_nxt = Rot(qe_de);
+    Get(qe_de).i_nxt = qe_de;
+    Get(Get(qe_de).i_rot).i_nxt = Rot(qe_pd);
+
+    // Create three new edges EP, FP, and GP
+    QuarterEdgeIndex qe_ep = AddEdge(Get(qe_ef).i_vertex, i_vertex);
+    QuarterEdgeIndex qe_fp = AddEdge(Get(qe_fd).i_vertex, i_vertex);
+    QuarterEdgeIndex qe_gp = AddEdge(Get(qe_ge).i_vertex, i_vertex);
+
+    // Splice them all
+    Splice(qe_de, qe_dg);
+    Splice(qe_gp, qe_ge);
+    Splice(qe_ep, qe_ef);
+    Splice(qe_fp, qe_fd);
+
+    // TODO: Figure out splice such that we get this desired effect.
+    //       i.e. can we replace these next calls with three calls to splice?
+    qe_pd = Sym(qe_de);
+    QuarterEdgeIndex qe_pe = Sym(qe_ep);
+    QuarterEdgeIndex qe_pf = Sym(qe_fp);
+    QuarterEdgeIndex qe_pg = Sym(qe_gp);
+
+    Get(qe_pd).i_nxt = Sym(qe_gp);
+    Get(qe_pe).i_nxt = Sym(qe_fp);
+    Get(qe_pf).i_nxt = Sym(qe_de);
+    Get(qe_pg).i_nxt = Sym(qe_ep);
+
+    Get(Rot(qe_pd)).i_nxt = Rot(qe_fp);
+    Get(Rot(qe_pe)).i_nxt = Rot(qe_gp);
+    Get(Rot(qe_pf)).i_nxt = Rot(qe_ep);
+    Get(Rot(qe_pg)).i_nxt = Rot(qe_de);
+
+    // Give back a quarter edge with p as its source that points along the split edge.
+    return qe_pd;
+}
+
+// ------------------------------------------------------------------------------------------------
 DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f& p) {
     InsertVertexResult result = {};
     result.i_vertex = {kInvalidIndex};
@@ -761,33 +846,9 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
     float dist_to_ca = common::GetDistanceToLine(p, c, a);
     if (std::min({dist_to_ab, dist_to_bc, dist_to_ca}) > min_dist_to_edge_) {
         // Normal case. We are not too close to an edge.
+        // The resulting quarter edge is a primal edge from P to A.
         result.category = InsertVertexResultCategory::IN_FACE;
-
-        // Add the new edges and splice them in
-        QuarterEdgeIndex ap = AddEdge(Get(qe_ab).i_vertex, result.i_vertex);
-        QuarterEdgeIndex bp = AddEdge(Get(qe_bc).i_vertex, result.i_vertex);
-        QuarterEdgeIndex cp = AddEdge(Get(qe_ca).i_vertex, result.i_vertex);
-
-        Splice(ap, qe_ab);
-        Splice(bp, qe_bc);
-        Splice(cp, qe_ca);
-
-        // TODO: Figure out splice such that we get this desired effect.
-        //       i.e. can we replace these next calls with three calls to splice?
-        QuarterEdgeIndex pa = Sym(ap);
-        QuarterEdgeIndex pb = Sym(bp);
-        QuarterEdgeIndex pc = Sym(cp);
-
-        Get(pa).i_nxt = pb;
-        Get(pb).i_nxt = pc;
-        Get(pc).i_nxt = pa;
-
-        Get(Get(pa).i_rot).i_nxt = Get(cp).i_rot;
-        Get(Get(pb).i_rot).i_nxt = Get(ap).i_rot;
-        Get(Get(pc).i_rot).i_nxt = Get(bp).i_rot;
-
-        // Give back a quarter edge with p as its source.
-        result.i_qe = pa;
+        result.i_qe = ConnectVertexInFace(qe_ab, qe_bc, qe_ca, result.i_vertex);
     } else {
         // We are effectively on an edge.
         // Identify that edge, and cut it with the new vertex.
@@ -795,82 +856,33 @@ DelaunayMesh::InsertVertexResult DelaunayMesh::InsertVertex(const common::Vec2f&
 
         // Let DE be the edge we are on, F be the far vertex qe, and G be the vertex qe across
         // DE from F.
-        QuarterEdgeIndex qe_dp;
+        QuarterEdgeIndex qe_de;
         QuarterEdgeIndex qe_ef;
         QuarterEdgeIndex qe_fd;
         if (dist_to_ab <= dist_to_bc && dist_to_ab <= dist_to_ca) {
-            qe_dp = qe_ab;
+            qe_de = qe_ab;
             qe_ef = qe_bc;
             qe_fd = qe_ca;
         } else if (dist_to_bc <= dist_to_ab && dist_to_bc <= dist_to_ca) {
-            qe_dp = qe_bc;
+            qe_de = qe_bc;
             qe_ef = qe_ca;
             qe_fd = qe_ab;
         } else {
-            qe_dp = qe_ca;
+            qe_de = qe_ca;
             qe_ef = qe_ab;
             qe_fd = qe_bc;
         }
 
-        QuarterEdgeIndex qe_ge = Prev(Sym(Prev(qe_dp)));
-
         // Our edge may not be the boundary edge
-        int n_boundary_vertices = IsBoundaryVertex(Get(Get(qe_dp).i_vertex)) +
-                                  IsBoundaryVertex(Get(Get(Sym(qe_dp)).i_vertex));
+        int n_boundary_vertices = IsBoundaryVertex(Get(Get(qe_de).i_vertex)) +
+                                  IsBoundaryVertex(Get(Get(Sym(qe_de)).i_vertex));
         if (n_boundary_vertices == 2) {
             result.category = InsertVertexResultCategory::OUT_OF_BOUNDS;
             return result;
         }
 
-        // Grab another quarter edge we will need
-        QuarterEdgeIndex qe_dg = Prev(qe_dp);
-
-        // Reset the things that point to DE
-        Get(qe_dg).i_nxt = Sym(qe_fd);
-        QuarterEdgeIndex qe_ge_tor = Tor(qe_ge);
-        Get(qe_ge_tor).i_nxt = Rot(Sym(qe_ef));
-        Get(qe_ef).i_nxt = Sym(qe_ge);
-        QuarterEdgeIndex qe_fd_tor = Tor(qe_fd);
-        Get(qe_fd_tor).i_nxt = Rot(Sym(qe_dg));
-
-        // Reset DP as a quarter edge, and change it to PD
-        QuarterEdgeIndex qe_pd = Sym(qe_dp);
-        Get(qe_pd).i_vertex = result.i_vertex;
-        Get(qe_pd).i_nxt = qe_pd;
-        Get(Get(qe_pd).i_rot).i_nxt = Rot(qe_dp);
-        Get(qe_dp).i_nxt = qe_dp;
-        Get(Get(qe_dp).i_rot).i_nxt = Rot(qe_pd);
-
-        // Create three new edges EP, FP, and GP
-        QuarterEdgeIndex qe_ep = AddEdge(Get(qe_ef).i_vertex, result.i_vertex);
-        QuarterEdgeIndex qe_fp = AddEdge(Get(qe_fd).i_vertex, result.i_vertex);
-        QuarterEdgeIndex qe_gp = AddEdge(Get(qe_ge).i_vertex, result.i_vertex);
-
-        // Splice them all
-        Splice(qe_dp, qe_dg);
-        Splice(qe_gp, qe_ge);
-        Splice(qe_ep, qe_ef);
-        Splice(qe_fp, qe_fd);
-
-        // TODO: Figure out splice such that we get this desired effect.
-        //       i.e. can we replace these next calls with three calls to splice?
-        qe_pd = Sym(qe_dp);
-        QuarterEdgeIndex qe_pe = Sym(qe_ep);
-        QuarterEdgeIndex qe_pf = Sym(qe_fp);
-        QuarterEdgeIndex qe_pg = Sym(qe_gp);
-
-        Get(qe_pd).i_nxt = Sym(qe_gp);
-        Get(qe_pe).i_nxt = Sym(qe_fp);
-        Get(qe_pf).i_nxt = Sym(qe_dp);
-        Get(qe_pg).i_nxt = Sym(qe_ep);
-
-        Get(Rot(qe_pd)).i_nxt = Rot(qe_fp);
-        Get(Rot(qe_pe)).i_nxt = Rot(qe_gp);
-        Get(Rot(qe_pf)).i_nxt = Rot(qe_ep);
-        Get(Rot(qe_pg)).i_nxt = Rot(qe_dp);
-
-        // Give back a quarter edge with p as its source that points along the split edge.
-        result.i_qe = qe_pd;
+        // The resulting quarter edge is a primal edge from P to D.
+        result.i_qe = ConnectVertexOnEdge(qe_de, qe_ef, qe_fd, result.i_vertex);
     }
 
     return result;
@@ -884,13 +896,13 @@ DelaunayMesh::EnforceEdgeInternalResult DelaunayMesh::EnforceEdgeInternal(Quarte
     result.progress = false;
 
     // Find either an existing quarter edge from A to B, or the quarter edge from A to C that is
-    // immediately counter-clockwise of A->B.
+    // immediately clockwise of A->B.
 
     const common::Vec2f& b = GetVertex(i_vertex_b);
     qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
 
     while (Get(Sym(qe_a)).i_vertex != i_vertex_b) {
-        // The edge is not pointing to b. We are point to C instead, and are immediately CCW of B.
+        // The edge is not pointing to b. We are pointed to C instead, and are immediately CW of B.
         // We need to flip CD, where D is on the other side of AB from C.
         QuarterEdgeIndex qe_cd = Prev(Sym(qe_a));
 
@@ -954,6 +966,131 @@ QuarterEdgeIndex DelaunayMesh::EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeInd
     }
 
     return qe_ab;
+}
+
+// ------------------------------------------------------------------------------------------------
+DelaunayMesh::EnforceEdgeButBetterInternalResult DelaunayMesh::EnforceEdgeButBetterInternal(
+    QuarterEdgeIndex qe_a, VertexIndex i_vertex_b) {
+    EnforceEdgeButBetterInternalResult result;
+    result.qe_ab = {kInvalidIndex};
+    result.progress = false;
+
+    // Find either an existing quarter edge from A to B, or the quarter edge from A to C that is
+    // immediately counter-clockwise of A->B.
+
+    const common::Vec2f& b = GetVertex(i_vertex_b);
+    qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
+
+    if (Get(Sym(qe_a)).i_vertex == i_vertex_b) {
+        // The edge is already pointing to B.
+        result.qe_ab = qe_a;
+        result.progress = false;
+        result.category = EnforceEdgeInternalResultCategory::EDGE_EXISTS;
+        return result;
+    }
+
+    // The edge is not pointing to b. We are pointed to C instead, and are immediately CW of B.
+    // We need to flip CD, where D is on the other side of AB from C.
+    // Note: We do not need to ensure that it is the boundary edge because if it crosses AB, it must
+    // lie in the interior.
+    QuarterEdgeIndex qe_cd = Prev(Sym(qe_a));
+
+    if (IsConstrained(qe_cd)) {
+        // We cannot flip it because CD is an enforced edge - split it!
+        result.category = EnforceEdgeInternalResultCategory::EDGE_SPLIT;
+        result.progress = true;
+
+        // Grab the relevant quarter edges.
+        const QuarterEdgeIndex qe_ac = qe_a;
+        const QuarterEdgeIndex qe_da = Prev(Sym(qe_cd));
+
+        // Find the line intersection.
+        const common::Vec2f& a = GetVertex(qe_a);
+        const common::Vec2f& b = GetVertex(i_vertex_b);
+        const common::Vec2f& c = GetVertex(Sym(qe_ac));  // right of A->B
+        const common::Vec2f& d = GetVertex(qe_da);       // left of A->B
+        common::LineIntersectionResult intersection = CalcLineIntersection(a, b, c, d);
+
+        // TODO: Verify that we get a single intersection at a point.
+
+        UnconstrainEdge(qe_cd);
+
+        common::Vec2f e = a + (b - a) * intersection.s;
+        VertexIndex i_vertex = AddVertex(e.x, e.y);
+        QuarterEdgeIndex qe_ec = ConnectVertexOnEdge(qe_cd, qe_da, qe_ac, i_vertex);
+        QuarterEdgeIndex qe_eb = Next(qe_ec);
+        QuarterEdgeIndex qe_ed = Next(qe_eb);
+
+        // Update the result to now start at the new split vertex.
+        result.qe_ab = qe_eb;
+
+        ConstrainEdge(qe_ec);
+        ConstrainEdge(qe_ed);
+
+        return result;
+    }
+
+    // Otherwise, the edge is not constrained.
+    // Attempt to flip it.
+
+    bool flipped = MaybeFlipEdge(qe_cd);
+    if (!flipped) {
+        // We cannot flip it because it is a non-convex quad.
+        result.category = EnforceEdgeInternalResultCategory::NONCONVEX_QUAD;
+        return result;
+    }
+
+    // We flipped the edge
+    result.category = EnforceEdgeInternalResultCategory::EDGE_FLIPPED;
+    result.progress = true;
+
+    // After flipping, we would have an edge pointing from A to E, where E completes the quad
+    // on the other side of CD from A. It is possible that E = B, or that E lies on either side
+    // of AB.
+    // Effectively start over.
+    result.qe_ab = GetQuarterEdgeRightHandClosestTo(qe_a, b);
+    return result;
+}
+
+// ------------------------------------------------------------------------------------------------
+DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIndex qe_a,
+                                                                   QuarterEdgeIndex qe_b) {
+    EnforceEdgeResult result;
+
+    if (!IsValid(qe_a) || !IsValid(qe_b)) {
+        return result;
+    }
+
+    VertexIndex i_vertex_a = GetVertexIndex(qe_a);
+    VertexIndex i_vertex_b = GetVertexIndex(qe_b);
+    if (i_vertex_a == i_vertex_b) {
+        return result;  // Cannot add self-edges
+    }
+
+    // Tackle this problem from both directions until solved or no progress is made.
+    bool progress = true;
+    result.success = false;
+    while (progress && !result.success) {
+        progress = false;
+
+        EnforceEdgeButBetterInternalResult internal_result =
+            EnforceEdgeButBetterInternal(qe_a, i_vertex_b);
+        progress |= internal_result.progress;
+        qe_a = internal_result.qe_ab;
+        result.success |=
+            internal_result.category == EnforceEdgeInternalResultCategory::EDGE_EXISTS;
+
+        if (result.success) {
+            break;
+        }
+
+        //     result = EnforceEdgeInternal(qe_b, i_vertex_a);
+        //     progress |= result.progress;
+        //     qe_ab = Sym(result.qe_ab);
+        //     success |= IsValid(qe_ab);
+    }
+
+    return result;
 }
 
 }  // namespace core

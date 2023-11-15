@@ -45,7 +45,7 @@ struct SideInfo {
     TextureInfo texture_info_upper;   // Texture displayed if the floor ceiling decreases
     QuarterEdgeIndex qe;              // The primary quarter edge that represents A->B
 
-    QuarterEdgeIndex qe_portal;       // The sideinfo for the other side of a portal
+    QuarterEdgeIndex qe_portal;  // The sideinfo for the other side of a portal
 };
 
 // All side infos refer to a sector to contain the corresponding floor/ceiling information.
@@ -105,7 +105,8 @@ class GameMap {
     bool MaybeFlipEdge(QuarterEdgeIndex qe_primal);
 
     bool MaybeEnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b) {
-        return IsValid(mesh_.EnforceEdge(qe_a, qe_b));
+        DelaunayMesh::EnforceEdgeResult result = mesh_.EnforceEdgeButBetter(qe_a, qe_b);
+        return result.success;
     }
 
     // // Write the GameMap entries into the exporter.

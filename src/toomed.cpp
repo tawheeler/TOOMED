@@ -1847,30 +1847,30 @@ int main() {
             }
         }
 
-        // {
-        //     ImGui::Begin("EnforceEdge");
-        //     const core::DelaunayMesh& mesh = map.GetMesh();
+        {
+            ImGui::Begin("EnforceEdge");
+            const core::DelaunayMesh& mesh = map.GetMesh();
 
-        //     static int int_src = 0;
-        //     static int int_dst = 0;
-        //     ImGui::InputInt("qe src: ", &int_src);
-        //     ImGui::InputInt("qe dst: ", &int_dst);
+            static int int_src = 0;
+            static int int_dst = 0;
+            ImGui::InputInt("qe src: ", &int_src);
+            ImGui::InputInt("qe dst: ", &int_dst);
 
-        //     static bool success = true;
-        //     if (ImGui::Button("enforce edge")) {
-        //         core::QuarterEdgeIndex qe_src = {int_src};
-        //         core::QuarterEdgeIndex qe_dst = {int_dst};
+            static bool success = true;
+            if (ImGui::Button("enforce edge")) {
+                core::QuarterEdgeIndex qe_src = {int_src};
+                core::QuarterEdgeIndex qe_dst = {int_dst};
 
-        //         if (mesh.IsPrimal(qe_src)) {
-        //             success = map.MaybeEnforceEdge(qe_src, qe_dst);
-        //         } else {
-        //             success = false;
-        //         }
-        //     }
-        //     ImGui::Text("success: %s", success ? "SUCCESS" : "FAILURE");
+                if (mesh.IsPrimal(qe_src)) {
+                    success = map.MaybeEnforceEdge(qe_src, qe_dst);
+                } else {
+                    success = false;
+                }
+            }
+            ImGui::Text("success: %s", success ? "SUCCESS" : "FAILURE");
 
-        //     ImGui::End();
-        // }
+            ImGui::End();
+        }
 
         // Side Info panel
         if (core::IsValid(selected_edge_index)) {
