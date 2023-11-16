@@ -978,14 +978,30 @@ DelaunayMesh::EnforceEdgeButBetterInternalResult DelaunayMesh::EnforceEdgeButBet
     // Find either an existing quarter edge from A to B, or the quarter edge from A to C that is
     // immediately counter-clockwise of A->B.
 
+    const common::Vec2f& a = GetVertex(qe_a);
     const common::Vec2f& b = GetVertex(i_vertex_b);
     qe_a = GetQuarterEdgeRightHandClosestTo(qe_a, b);
 
-    if (Get(Sym(qe_a)).i_vertex == i_vertex_b) {
+    VertexIndex i_vertex_target = Get(Sym(qe_a)).i_vertex;
+    if (i_vertex_target == i_vertex_b) {
         // The edge is already pointing to B.
         result.qe_ab = qe_a;
         result.progress = false;
         result.category = EnforceEdgeInternalResultCategory::EDGE_EXISTS;
+        return result;
+    }
+
+    // It is possible that the edge we have does point toward B via an intermediate point E.
+    // We can detect this by measuring the offset that E would have if we were to produce a new line
+    // from A to B.
+    const common::Vec2f& e = GetVertex(i_vertex_target);
+    f32 e_dist_from_ab = common::GetDistanceToLine(e, a, b);
+    if (e_dist_from_ab < min_dist_to_edge_) {
+        // If it is close enough to be considered coincident, then we consider it to be an
+        // intermediate point.
+        result.qe_ab = qe_a;
+        result.progress = true;
+        result.category = EnforceEdgeInternalResultCategory::INTERMEDIATE_EDGE_EXISTS;
         return result;
     }
 
@@ -1005,8 +1021,6 @@ DelaunayMesh::EnforceEdgeButBetterInternalResult DelaunayMesh::EnforceEdgeButBet
         const QuarterEdgeIndex qe_da = Prev(Sym(qe_cd));
 
         // Find the line intersection.
-        const common::Vec2f& a = GetVertex(qe_a);
-        const common::Vec2f& b = GetVertex(i_vertex_b);
         const common::Vec2f& c = GetVertex(Sym(qe_ac));  // right of A->B
         const common::Vec2f& d = GetVertex(qe_da);       // left of A->B
         common::LineIntersectionResult intersection = CalcLineIntersection(a, b, c, d);
@@ -1082,6 +1096,11 @@ DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIn
         if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_EXISTS) {
             result.success = true;
             quarter_edges_from_a.push_back(internal_result.qe_ab);
+        } else if (internal_result.category ==
+                   EnforceEdgeInternalResultCategory::INTERMEDIATE_EDGE_EXISTS) {
+            quarter_edges_from_a.push_back(internal_result.qe_ab);
+            qe_a = Sym(internal_result.qe_ab);
+            i_vertex_a = GetVertexIndex(qe_a);
         } else if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_SPLIT) {
             qe_a = internal_result.qe_ab;
             i_vertex_a = GetVertexIndex(qe_a);
@@ -1101,6 +1120,11 @@ DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIn
         if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_EXISTS) {
             result.success = true;
             quarter_edges_from_b.push_back(Sym(internal_result.qe_ab));
+        } else if (internal_result.category ==
+                   EnforceEdgeInternalResultCategory::INTERMEDIATE_EDGE_EXISTS) {
+            quarter_edges_from_b.push_back(internal_result.qe_ab);
+            qe_b = Sym(internal_result.qe_ab);
+            i_vertex_b = GetVertexIndex(qe_b);
         } else if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_SPLIT) {
             qe_b = internal_result.qe_ab;
             i_vertex_b = GetVertexIndex(qe_b);
