@@ -312,7 +312,7 @@ class DelaunayMesh {
     EnforceEdgeInternalResult EnforceEdgeInternal(QuarterEdgeIndex qe_a, VertexIndex i_vertex_b);
 
     enum class EnforceEdgeInternalResultCategory {
-        EDGE_EXISTS,    // The requested edge already exist
+        EDGE_EXISTS,    // The requested edge already exists
         EDGE_FLIPPED,   // A quad was flipped to produce the new edge
         EDGE_SPLIT,     // An enforced edge was split and new segments were added
         NONCONVEX_QUAD  // Could not flip the edge, as the quad is nonconvex.

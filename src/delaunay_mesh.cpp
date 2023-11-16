@@ -1068,6 +1068,9 @@ DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIn
     }
 
     // Tackle this problem from both directions until solved or no progress is made.
+    std::vector<QuarterEdgeIndex> quarter_edges_from_a;
+    std::vector<QuarterEdgeIndex> quarter_edges_from_b;
+
     bool progress = true;
     result.success = false;
     while (progress && !result.success) {
@@ -1076,18 +1079,37 @@ DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIn
         EnforceEdgeButBetterInternalResult internal_result =
             EnforceEdgeButBetterInternal(qe_a, i_vertex_b);
         progress |= internal_result.progress;
-        qe_a = internal_result.qe_ab;
-        result.success |=
-            internal_result.category == EnforceEdgeInternalResultCategory::EDGE_EXISTS;
+        if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_EXISTS) {
+            result.success = true;
+            quarter_edges_from_a.push_back(internal_result.qe_ab);
+        } else if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_SPLIT) {
+            qe_a = internal_result.qe_ab;
+            i_vertex_a = GetVertexIndex(qe_a);
+            quarter_edges_from_a.push_back(Sym(Next(Next(qe_a))));
+        }
 
         if (result.success) {
             break;
         }
 
-        //     result = EnforceEdgeInternal(qe_b, i_vertex_a);
-        //     progress |= result.progress;
-        //     qe_ab = Sym(result.qe_ab);
-        //     success |= IsValid(qe_ab);
+        internal_result = EnforceEdgeButBetterInternal(qe_b, i_vertex_a);
+        progress |= internal_result.progress;
+        if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_EXISTS) {
+            result.success = true;
+            quarter_edges_from_b.push_back(Sym(internal_result.qe_ab));
+        } else if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_SPLIT) {
+            qe_b = internal_result.qe_ab;
+            i_vertex_b = GetVertexIndex(qe_b);
+            quarter_edges_from_b.push_back(Next(Next(qe_b)));
+        }
+    }
+
+    // Add the quarter edges making up the new segment to the result
+    for (int i = 0; i < quarter_edges_from_a.size(); i++) {
+        result.quarter_edges.push_back(quarter_edges_from_a[i]);
+    }
+    for (int i = quarter_edges_from_b.size() - 1; i >= 0; i--) {
+        result.quarter_edges.push_back(quarter_edges_from_b[i]);
     }
 
     return result;
