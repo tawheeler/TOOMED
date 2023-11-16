@@ -213,14 +213,6 @@ class DelaunayMesh {
     // This method will not succeed if there is a constrained edge that overlaps AB.
     QuarterEdgeIndex EnforceEdge(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
 
-    // Records an edge split in which an existing edge had a new vertex added to it,
-    // resulting in two edges.
-    struct EdgeSplit {
-        QuarterEdgeIndex qe_a;  // One of the quarter edges in the original, pre-split edge.
-        QuarterEdgeIndex qe_b;  // The other quarter edge in the original, pre-split edge.
-        QuarterEdgeIndex qe_c;  // The new quarter edge CB between A and B.
-    };
-
     struct EnforceEdgeResult {
         bool success;
 
@@ -230,9 +222,9 @@ class DelaunayMesh {
         // there are constrained edges that cross AB that we have to split.
         std::vector<QuarterEdgeIndex> quarter_edges;
 
-        // All of the split events that occurred.
-        // We split any enforced edges that our new edge has to cross.
-        std::vector<EdgeSplit> splits;
+        // All of the split events that occurred. We record the quarter edges whose origins are new
+        // vertices. We split any enforced edges that our new edge has to cross.
+        std::vector<QuarterEdgeIndex> new_vertices;
     };
     EnforceEdgeResult EnforceEdgeButBetter(QuarterEdgeIndex qe_a, QuarterEdgeIndex qe_b);
 

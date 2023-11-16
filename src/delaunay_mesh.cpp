@@ -1085,7 +1085,11 @@ DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIn
         } else if (internal_result.category == EnforceEdgeInternalResultCategory::EDGE_SPLIT) {
             qe_a = internal_result.qe_ab;
             i_vertex_a = GetVertexIndex(qe_a);
-            quarter_edges_from_a.push_back(Sym(Next(Next(qe_a))));
+
+            // The quarter edge leading from our start vertex to the updated qe_a.
+            QuarterEdgeIndex qe_new = Sym(Next(Next(qe_a)));
+            quarter_edges_from_a.push_back(qe_new);
+            result.new_vertices.push_back(qe_a);
         }
 
         if (result.success) {
@@ -1101,14 +1105,15 @@ DelaunayMesh::EnforceEdgeResult DelaunayMesh::EnforceEdgeButBetter(QuarterEdgeIn
             qe_b = internal_result.qe_ab;
             i_vertex_b = GetVertexIndex(qe_b);
             quarter_edges_from_b.push_back(Next(Next(qe_b)));
+            result.new_vertices.push_back(qe_b);
         }
     }
 
     // Add the quarter edges making up the new segment to the result
-    for (int i = 0; i < quarter_edges_from_a.size(); i++) {
+    for (int i = 0; i < (int)quarter_edges_from_a.size(); i++) {
         result.quarter_edges.push_back(quarter_edges_from_a[i]);
     }
-    for (int i = quarter_edges_from_b.size() - 1; i >= 0; i--) {
+    for (int i = (int)quarter_edges_from_b.size() - 1; i >= 0; i--) {
         result.quarter_edges.push_back(quarter_edges_from_b[i]);
     }
 
